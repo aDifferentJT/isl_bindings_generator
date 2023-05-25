@@ -42,6 +42,7 @@ lazy_static! {
                        ("isl_set *", "Set"),
                        ("isl_basic_map *", "BasicMap"),
                        ("isl_map *", "Map"),
+                       ("isl_constraint *", "Constraint"),
                        ("isl_aff *", "Aff"),
                        ("isl_pw_aff *", "PwAff"),
                        ("isl_stride_info *", "StrideInfo"),
@@ -59,6 +60,7 @@ lazy_static! {
                                                                       "isl_set *",
                                                                       "isl_basic_map *",
                                                                       "isl_map *",
+                                                                      "isl_constraint *",
                                                                       "isl_aff *",
                                                                       "isl_pw_aff *",
                                                                       "isl_stride_info *",
@@ -513,7 +515,7 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, tokens: Vec
            || ret_type.clone()
                       .map_or(false, |x| is_type_not_supported(&x))
         {
-            println!("SKIPPPING {}", func_decl.get_name().unwrap());
+            println!("SKIPPING {}", func_decl.get_name().unwrap());
             continue;
         }
         let c_arg_names =
@@ -824,6 +826,7 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("mod set;");
     scope.raw("mod bmap;");
     scope.raw("mod map;");
+    scope.raw("mod constraint;");
     scope.raw("mod aff;");
     scope.raw("mod pw_aff;");
 
@@ -845,6 +848,7 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("pub use set::Set;");
     scope.raw("pub use bmap::BasicMap;");
     scope.raw("pub use map::Map;");
+    scope.raw("pub use constraint::Constraint;");
     scope.raw("pub use aff::Aff;");
     scope.raw("pub use pw_aff::PwAff;");
 
@@ -908,6 +912,10 @@ fn main() {
                        "isl_map",
                        "src/bindings/map.rs",
                        "isl/include/isl/map.h");
+    implement_bindings("Constraint",
+                       "isl_constraint",
+                       "src/bindings/constraint.rs",
+                       "isl/include/isl/constraint.h");
     implement_bindings("Aff",
                        "isl_aff",
                        "src/bindings/aff.rs",
