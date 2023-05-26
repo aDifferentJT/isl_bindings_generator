@@ -98,7 +98,10 @@ lazy_static! {
                        "isl_basic_map_list *",
                        "isl_set_list *",
                        "isl_map_list *",
+                       "isl_constraint_list *",
                        "isl_aff_list *",
+                       "isl_constraint **",
+                       "struct isl_constraint **",
                        "isl_union_pw_aff *",
                        "isl_multi_aff *",
                        "isl_multi_pw_aff *",
@@ -485,7 +488,9 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, tokens: Vec
                     "__isl_take" => Some(ISLOwnership::Take),
                     "__isl_keep" => Some(ISLOwnership::Keep),
                     "__isl_give" => None, // FIXME
-                    x => panic!("Unknown ownership rule {}", x),
+                    x => panic!("Unknown ownership rule {} in {}",
+                                x,
+                                func_decl.get_name().unwrap()),
                 }
             } else if arg.get_type().unwrap().get_display_name() == "isl_ctx *"
                       || arg.get_type().unwrap().get_display_name() == "struct isl_ctx *"
@@ -551,35 +556,44 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, tokens: Vec
 /// Generates Rust bindings for type `dst_t` from the C-struct `src_t`. Searches
 /// for functions within `src_file` and the generated code is written to
 /// `dst_file`.
-fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_file: &str) {
+fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&str]) {
     let clang = clang::Clang::new().unwrap();
     let index = clang::Index::new(&clang, false, true);
-    let t_unit = index.parser(src_file)
-                      .arguments(&["-I", "isl/include/", "-I", "/usr/lib64/clang/13/include"])
-                      .parse()
-                      .unwrap();
-    let tokens = t_unit.get_entity().get_range().unwrap().tokenize();
 
-    // func_decls: Functions for which bindings are to be generated
-    let func_decls: Vec<_> = t_unit.get_entity()
-                                   .get_children()
-                                   .into_iter()
-                                   .filter(|e| {
-                                       e.get_kind() == clang::EntityKind::FunctionDecl
-                                       && e.get_name().is_some()
-                                       && e.get_name().unwrap().starts_with(src_t)
-                                       // match isl_set, but not isl_set_list
-                                       && ! e.get_name().unwrap().starts_with(format!("{}_list", src_t).as_str())
-                                       // FIXME: to_list functions have unfavorable tokens
-                                       && e.get_name().unwrap() != format!("{}_to_list", src_t)
-                                       && ! UNSUPPORTED_FUNCS.contains(e.get_name().unwrap().as_str())
-                                       && e.get_location().is_some()
-                                       && e.get_location().unwrap().get_presumed_location().0
-                                          == src_file.to_string()
-                                   })
-                                   .collect();
-    let (extern_funcs, binding_funcs) =
-        get_extern_and_bindings_functions(func_decls, tokens, src_t);
+    let (extern_funcs, binding_funcs): (Vec<_>, Vec<_>) =
+        src_files.iter()
+                 .map(|src_file| {
+                     let t_unit =
+                         index.parser(src_file)
+                              .arguments(&["-I", "isl/include/", "-I", "/usr/lib64/clang/13/include"])
+                              .parse()
+                              .unwrap();
+                     let tokens = t_unit.get_entity().get_range().unwrap().tokenize();
+
+                     // func_decls: Functions for which bindings are to be generated
+                     let func_decls: Vec<_> =
+                         t_unit.get_entity()
+                               .get_children()
+                               .into_iter()
+                               .filter(|e| {
+                                   e.get_kind() == clang::EntityKind::FunctionDecl
+                                   && e.get_name().is_some()
+                                   && e.get_name().unwrap().starts_with(src_t)
+                                   // match isl_set, but not isl_set_list
+                                   && ! e.get_name().unwrap().starts_with(format!("{}_list", src_t).as_str())
+                                   // FIXME: to_list functions have unfavorable tokens
+                                   && e.get_name().unwrap() != format!("{}_to_list", src_t)
+                                   && ! UNSUPPORTED_FUNCS.contains(e.get_name().unwrap().as_str())
+                                   && e.get_location().is_some()
+                                   && src_file.to_string()
+                                      == e.get_location().unwrap().get_presumed_location().0
+                               })
+                               .collect();
+                     get_extern_and_bindings_functions(func_decls, tokens, src_t)
+                 })
+                 .unzip();
+    let extern_funcs = extern_funcs.concat();
+    let binding_funcs = binding_funcs.concat();
 
     let mut scope = Scope::new();
 
@@ -870,68 +884,71 @@ fn main() {
     implement_bindings("Context",
                        "isl_ctx",
                        "src/bindings/context.rs",
-                       "isl/include/isl/ctx.h");
+                       &["isl/include/isl/ctx.h"]);
     implement_bindings("Space",
                        "isl_space",
                        "src/bindings/space.rs",
-                       "isl/include/isl/space.h");
+                       &["isl/include/isl/space.h"]);
     implement_bindings("LocalSpace",
                        "isl_local_space",
                        "src/bindings/local_space.rs",
-                       "isl/include/isl/local_space.h");
-    implement_bindings("Id", "isl_id", "src/bindings/id.rs", "isl/include/isl/id.h");
+                       &["isl/include/isl/local_space.h"]);
+    implement_bindings("Id",
+                       "isl_id",
+                       "src/bindings/id.rs",
+                       &["isl/include/isl/id.h"]);
     implement_bindings("Val",
                        "isl_val",
                        "src/bindings/val.rs",
-                       "isl/include/isl/val.h");
+                       &["isl/include/isl/val.h"]);
     implement_bindings("Point",
                        "isl_point",
                        "src/bindings/point.rs",
-                       "isl/include/isl/point.h");
+                       &["isl/include/isl/point.h"]);
     implement_bindings("Mat",
                        "isl_mat",
                        "src/bindings/mat.rs",
-                       "isl/include/isl/mat.h");
+                       &["isl/include/isl/mat.h"]);
     implement_bindings("Vec",
                        "isl_vec",
                        "src/bindings/vec.rs",
-                       "isl/include/isl/vec.h");
+                       &["isl/include/isl/vec.h"]);
     implement_bindings("BasicSet",
                        "isl_basic_set",
                        "src/bindings/bset.rs",
-                       "isl/include/isl/set.h");
+                       &["isl/include/isl/set.h", "isl/include/isl/constraint.h"]);
     implement_bindings("Set",
                        "isl_set",
                        "src/bindings/set.rs",
-                       "isl/include/isl/set.h");
+                       &["isl/include/isl/set.h", "isl/include/isl/constraint.h"]);
     implement_bindings("BasicMap",
                        "isl_basic_map",
                        "src/bindings/bmap.rs",
-                       "isl/include/isl/map.h");
+                       &["isl/include/isl/map.h", "isl/include/isl/constraint.h"]);
     implement_bindings("Map",
                        "isl_map",
                        "src/bindings/map.rs",
-                       "isl/include/isl/map.h");
+                       &["isl/include/isl/map.h", "isl/include/isl/constraint.h"]);
     implement_bindings("Constraint",
                        "isl_constraint",
                        "src/bindings/constraint.rs",
-                       "isl/include/isl/constraint.h");
+                       &["isl/include/isl/constraint.h"]);
     implement_bindings("Aff",
                        "isl_aff",
                        "src/bindings/aff.rs",
-                       "isl/include/isl/aff.h");
+                       &["isl/include/isl/aff.h"]);
     implement_bindings("PwAff",
                        "isl_pw_aff",
                        "src/bindings/pw_aff.rs",
-                       "isl/include/isl/aff.h");
+                       &["isl/include/isl/aff.h"]);
     implement_bindings("StrideInfo",
                        "isl_stride_info",
                        "src/bindings/stride_info.rs",
-                       "isl/include/isl/stride_info.h");
+                       &["isl/include/isl/stride_info.h"]);
     implement_bindings("FixedBox",
                        "isl_fixed_box",
                        "src/bindings/fixed_box.rs",
-                       "isl/include/isl/fixed_box.h");
+                       &["isl/include/isl/fixed_box.h"]);
 
     // }}}
 
