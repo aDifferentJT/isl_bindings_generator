@@ -792,8 +792,18 @@ fn define_dim_type_enum(dst_file: &str, src_file: &str) {
 
     let c_variant_names = isl_dim_type_decl.get_children()
                                            .into_iter()
+                                           .filter(|x| x.get_children().is_empty())
                                            .map(|x| x.get_display_name().unwrap())
                                            .collect::<Vec<_>>();
+
+    let c_synonyms =
+        isl_dim_type_decl.get_children()
+                         .into_iter()
+                         .filter_map(|x| {
+                             Some((x.get_display_name().unwrap(),
+                                   x.get_children().pop()?.get_display_name().unwrap()))
+                         })
+                         .collect::<Vec<_>>();
 
     // KK: Assertion to guard assumption
     assert!(c_variant_names.iter().all(|x| x.starts_with("isl_dim_")));
@@ -811,6 +821,26 @@ fn define_dim_type_enum(dst_file: &str, src_file: &str) {
                                    &name_in_rust[..1].to_uppercase(),
                                    &name_in_rust[1..]);
         dim_type_enum.new_variant(guard_identifier(name_in_rust));
+    }
+
+    let dim_type_impl = scope.new_impl(C_TO_RS_BINDING["enum isl_dim_type"]);
+    for (c_synonym_name, c_synonym_value) in c_synonyms {
+        let name_in_rust = c_synonym_name[8..].to_string(); // 8 = len("isl_dim_")
+                                                            // convert variant name to camel case
+        let name_in_rust = format!("{}{}",
+                                   &name_in_rust[..1].to_uppercase(),
+                                   &name_in_rust[1..]);
+        let value_in_rust = c_synonym_value[8..].to_string(); // 8 = len("isl_dim_")
+                                                              // convert variant name to camel case
+        let value_in_rust = format!("{}{}",
+                                    &value_in_rust[..1].to_uppercase(),
+                                    &value_in_rust[1..]);
+        dim_type_impl.associate_const(guard_identifier(name_in_rust),
+                                      C_TO_RS_BINDING["enum isl_dim_type"],
+                                      C_TO_RS_BINDING["enum isl_dim_type"].to_string()
+                                      + "::"
+                                      + &guard_identifier(value_in_rust),
+                                      "pub");
     }
 
     // Write the generated code
