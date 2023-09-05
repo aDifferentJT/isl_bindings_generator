@@ -47,7 +47,8 @@ lazy_static! {
                        ("isl_pw_aff *", "PwAff"),
                        ("isl_stride_info *", "StrideInfo"),
                        ("isl_fixed_box *", "FixedBox"),
-                       ("enum isl_dim_type", "DimType")]);
+                       ("enum isl_dim_type", "DimType"),
+                       ("isl_printer *", "Printer")]);
     static ref ISL_CORE_TYPES: HashSet<&'static str> = HashSet::from(["isl_ctx *",
                                                                       "isl_space *",
                                                                       "isl_local_space *",
@@ -64,7 +65,8 @@ lazy_static! {
                                                                       "isl_aff *",
                                                                       "isl_pw_aff *",
                                                                       "isl_stride_info *",
-                                                                      "isl_fixed_box *",]);
+                                                                      "isl_fixed_box *",
+                                                                      "isl_printer *",]);
     static ref ISL_TYPES_RS: HashSet<&'static str> =
         HashSet::from_iter(C_TO_RS_BINDING.clone().into_values());
     static ref KEYWORD_TO_IDEN: HashMap<&'static str, &'static str> =
@@ -94,25 +96,41 @@ lazy_static! {
                        "isl_mat **",
                        "enum isl_error",
                        "isl_id_list *",
+                       "isl_val_list *",
                        "isl_basic_set_list *",
                        "isl_basic_map_list *",
                        "isl_set_list *",
                        "isl_map_list *",
                        "isl_constraint_list *",
                        "isl_aff_list *",
+                       "isl_pw_aff_list *",
+                       "isl_pw_multi_aff_list *",
+                       "isl_union_pw_aff_list *",
+                       "isl_union_pw_multi_aff_list *",
                        "isl_constraint **",
                        "struct isl_constraint **",
                        "isl_union_pw_aff *",
                        "isl_multi_aff *",
                        "isl_multi_pw_aff *",
                        "isl_pw_multi_aff *",
+                       "isl_union_pw_multi_aff *",
+                       "isl_multi_union_pw_aff *",
                        "isl_multi_val *",
-                        "isl_multi_id *",
+                       "isl_multi_id *",
+                       "isl_qpolynomial *",
+                       "isl_pw_qpolynomial *",
+                       "isl_qpolynomial_fold *",
+                       "isl_pw_qpolynomial_fold *",
+                       "isl_union_pw_qpolynomial *",
+                       "isl_union_pw_qpolynomial_fold *",
+                       "isl_qpolynomial_list *",
+                       "isl_pw_qpolynomial_list *",
+                       "isl_pw_qpolynomial_fold_list *",
         ]);
 
     // TODO: Once we reduce this set down to 0, we are done!
     static ref UNSUPPORTED_FUNCS: HashSet<&'static str> =
-        HashSet::from([]);
+        HashSet::from(["isl_printer_print_id_list"]);
 }
 
 /// Returns the lexicographic ordering of `x` and `y`.
@@ -805,6 +823,7 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("mod constraint;");
     scope.raw("mod aff;");
     scope.raw("mod pw_aff;");
+    scope.raw("mod printer;");
 
     scope.raw("pub use dim_type::DimType;");
     scope.raw("pub use fixed_box::FixedBox;");
@@ -827,6 +846,7 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("pub use constraint::Constraint;");
     scope.raw("pub use aff::Aff;");
     scope.raw("pub use pw_aff::PwAff;");
+    scope.raw("pub use printer::Printer;");
 
     // Write the generated code
     fs::write(dst_file, scope.to_string()).expect("error writing to dim_type file");
@@ -911,6 +931,18 @@ fn main() {
                        "isl_fixed_box",
                        "src/bindings/fixed_box.rs",
                        &["isl/include/isl/fixed_box.h"]);
+    implement_bindings("Printer",
+                       "isl_printer",
+                       "src/bindings/printer.rs",
+                       &["isl/include/isl/printer.h",
+                         "isl/include/isl/val.h",
+                         "isl/include/isl/set.h",
+                         "isl/include/isl/map.h",
+                         //"isl/include/isl/union_set.h",
+                         //"isl/include/isl/union_map.h",
+                         "isl/include/isl/id.h",
+                         "isl/include/isl/aff.h",
+                         "isl/include/isl/polynomial.h"]);
 
     // }}}
 
