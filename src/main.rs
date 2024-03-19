@@ -604,6 +604,31 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
 
     // }}}
 
+    // {{{ impl Clone for `dst_t`.
+
+    if binding_funcs.iter().any(|Function { name,
+                                            arg_names: _,
+                                            arg_types,
+                                            ret_type, }| {
+                                    match (&name[..], &arg_types[..], ret_type) {
+                                        ("copy", [arg_type], Some(ret_type)) => {
+                                            arg_type.strip_prefix('&') == Some(dst_t)
+                                            && ret_type == dst_t
+                                        }
+                                        _ => false,
+                                    }
+                                })
+    {
+        let clone_impl = scope.new_impl(dst_t);
+        clone_impl.impl_trait("Clone");
+        clone_impl.new_fn("clone")
+                  .arg_ref_self()
+                  .ret(dst_t)
+                  .line("self.copy()");
+    }
+
+    // }}}
+
     // {{{ Implement the struct 'dst_t'
 
     let dst_impl = scope.new_impl(dst_t);
