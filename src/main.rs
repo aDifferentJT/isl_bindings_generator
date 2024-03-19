@@ -18,14 +18,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use clang;
 use clang::token::{Token, TokenKind};
 use codegen::Scope;
 use hashbrown::{HashMap, HashSet};
 use lazy_static::lazy_static;
 use std::fs;
 use std::iter::zip;
-use std::option::Option;
 use std::path::Path;
 
 lazy_static! {
@@ -86,12 +84,13 @@ lazy_static! {
                        "isl_val **",
                        "int *",
                        "isl_bool *",
+                       "isl_bool (*)(isl_set *, isl_aff *, void *)",
+                       "isl_stat",
                        "isl_stat (*)(isl_basic_set *, void *)",
                        "isl_stat (*)(isl_point *, void *)",
+                       "struct isl_args *",
                        "struct isl_options *",
-                       "void *",
                        "const void *",
-                       "void (*)(void *)",
                        "char **",
                        "isl_mat **",
                        "enum isl_error",
@@ -160,7 +159,7 @@ fn get_tokens_sorted_by_occurence(tokens: Vec<Token>)
     let position_to_token: Vec<_> = sorted_locations.iter().map(|x| loc_to_token[x]).collect();
     let mut loc_to_position: HashMap<(usize, usize), usize> = HashMap::new();
     for (i, loc) in sorted_locations.into_iter().enumerate() {
-        loc_to_position.insert(loc, i as usize);
+        loc_to_position.insert(loc, i);
     }
 
     (loc_to_position, position_to_token)
@@ -206,36 +205,28 @@ fn guard_identifier(input: impl ToString) -> String {
 
 /// Returns `true` only if `c_arg_t` is reference to a core isl object.
 /// Note that we do not consider `isl_dim_type` to be a core isl object.
-fn is_isl_type(c_arg_t: &impl ToString) -> bool {
+fn is_isl_type(c_arg_t: &str) -> bool {
     let c_arg_t = &c_arg_t.to_string()[..];
-    if ISL_CORE_TYPES.contains(c_arg_t) {
-        true
-    } else if c_arg_t.starts_with("const ")
-              && ISL_CORE_TYPES.contains(c_arg_t[6..].to_string().as_str())
-    {
-        true
-    } else if c_arg_t.starts_with("struct ")
-              && ISL_CORE_TYPES.contains(c_arg_t[7..].to_string().as_str())
-    {
-        true
-    } else {
-        false
-    }
+
+    ISL_CORE_TYPES.contains(c_arg_t)
+    || c_arg_t.strip_prefix("const ")
+              .is_some_and(|c_arg_t| ISL_CORE_TYPES.contains(c_arg_t))
+    || c_arg_t.strip_prefix("struct ")
+              .is_some_and(|c_arg_t| ISL_CORE_TYPES.contains(c_arg_t))
 }
 
 /// Returns `true` only if `c_arg_t` is a type not supported by
 /// [`isl_bindings_generator`].
-fn is_type_not_supported(c_arg_t: &String) -> bool {
-    let c_arg_t = &c_arg_t[..];
+fn is_type_not_supported(c_arg_t: &str) -> bool {
     UNSUPPORTED_C_TYPES.contains(c_arg_t)
 }
 
 /// Returns the name for `c_arg_t` to use in `extern "C"` block function
 /// declarations.
-fn to_extern_arg_t(c_arg_t: String) -> String {
-    let extern_t = if c_arg_t == "enum isl_dim_type" {
-        C_TO_RS_BINDING[c_arg_t.as_str()]
-    } else if is_isl_type(&c_arg_t) {
+fn to_extern_arg_t(c_arg_t: &str) -> &str {
+    if c_arg_t == "enum isl_dim_type" {
+        C_TO_RS_BINDING[c_arg_t]
+    } else if is_isl_type(c_arg_t) {
         "uintptr_t"
     } else if c_arg_t == "isl_size" {
         // FIXME: Add add an assertion for this assumption.
@@ -245,9 +236,7 @@ fn to_extern_arg_t(c_arg_t: String) -> String {
         // Using i32 for isl_bool as it is not a real type.
         // Will panic for -1
         "i32"
-    } else if c_arg_t == "const char *" {
-        "*const c_char"
-    } else if c_arg_t == "char *" {
+    } else if c_arg_t == "const char *" || c_arg_t == "char *" {
         "*const c_char"
     } else if c_arg_t == "int" {
         "i32"
@@ -261,11 +250,13 @@ fn to_extern_arg_t(c_arg_t: String) -> String {
         "usize"
     } else if c_arg_t == "double" {
         "f64"
+    } else if c_arg_t == "void *" {
+        "*mut c_void"
+    } else if c_arg_t == "void (*)(void *)" {
+        "unsafe extern \"C\" fn(*mut c_void)"
     } else {
         panic!("Unexpected type: {}", c_arg_t)
-    };
-
-    extern_t.to_string()
+    }
 }
 
 /// Returns the name for `c_arg_t` to use in the rust-binding function.
@@ -273,15 +264,9 @@ fn to_rust_arg_t(c_arg_t: String, ownership: Option<ISLOwnership>) -> String {
     let c_arg_t = c_arg_t.as_str();
     if c_arg_t == "enum isl_dim_type" {
         C_TO_RS_BINDING[c_arg_t].to_string()
-    } else if is_isl_type(&c_arg_t) {
-        let c_arg_t = if c_arg_t.starts_with("const ") {
-            c_arg_t[6..].to_string()
-        } else if c_arg_t.starts_with("struct ") {
-            c_arg_t[7..].to_string()
-        } else {
-            c_arg_t.to_string()
-        };
-        let c_arg_t = c_arg_t.as_str();
+    } else if is_isl_type(c_arg_t) {
+        let c_arg_t = c_arg_t.strip_prefix("const ")
+                             .unwrap_or_else(|| c_arg_t.strip_prefix("struct ").unwrap_or(c_arg_t));
 
         match ownership.unwrap() {
             ISLOwnership::Keep => format!("&{}", C_TO_RS_BINDING[c_arg_t]),
@@ -294,9 +279,7 @@ fn to_rust_arg_t(c_arg_t: String, ownership: Option<ISLOwnership>) -> String {
     } else if c_arg_t == "isl_bool" {
         // isl_bool_error should be panic-ed.
         "bool".to_string()
-    } else if c_arg_t == "const char *" {
-        "&str".to_string()
-    } else if c_arg_t == "char *" {
+    } else if c_arg_t == "const char *" || c_arg_t == "char *" {
         "&str".to_string()
     } else if c_arg_t == "int" {
         "i32".to_string()
@@ -310,15 +293,17 @@ fn to_rust_arg_t(c_arg_t: String, ownership: Option<ISLOwnership>) -> String {
         "usize".to_string()
     } else if c_arg_t == "double" {
         "f64".to_string()
+    } else if c_arg_t == "void *" {
+        "*mut c_void".to_string()
+    } else if c_arg_t == "void (*)(void *)" {
+        "unsafe extern \"C\" fn(*mut c_void)".to_string()
     } else {
         panic!("Unexpected type: {}", c_arg_t)
     }
 }
 
 /// Imports `ty_name` from the correct path for `scope`.
-fn import_type(scope: &mut Scope, ty_name: &String) {
-    let ty_name = ty_name.as_str();
-
+fn import_type(scope: &mut Scope, ty_name: &str) {
     match ty_name {
         "uintptr_t" => {
             scope.import("libc", "uintptr_t");
@@ -331,10 +316,16 @@ fn import_type(scope: &mut Scope, ty_name: &String) {
         "*const c_char" => {
             scope.import("std::os::raw", "c_char");
         }
+        "*mut c_void" => {
+            scope.import("std::os::raw", "c_void");
+        }
+        "unsafe extern \"C\" fn(*mut c_void)" => {
+            scope.import("std::os::raw", "c_void");
+        }
         x if ISL_TYPES_RS.contains(x) => {
             scope.import("crate::bindings", x);
         }
-        x if x.starts_with("&") && ISL_TYPES_RS.contains(&x[1..]) => {
+        x if x.starts_with('&') && ISL_TYPES_RS.contains(&x[1..]) => {
             scope.import("crate::bindings", &x[1..]);
         }
 
@@ -344,13 +335,21 @@ fn import_type(scope: &mut Scope, ty_name: &String) {
 
 /// Updates `func` by adding a line shadowing the variable `var_name` to pass it
 /// legally to an external function.
-fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &String,
+fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &str,
                                  var_name: impl ToString) {
-    let rs_ty_name = rs_ty_name.as_str();
     let var_name = var_name.to_string();
 
     match rs_ty_name {
-        "i32" | "u32" | "bool" | "u64" | "i64" | "f64" | "usize" | "DimType" => {}
+        "i32"
+        | "u32"
+        | "bool"
+        | "u64"
+        | "i64"
+        | "f64"
+        | "usize"
+        | "DimType"
+        | "*mut c_void"
+        | "unsafe extern \"C\" fn(*mut c_void)" => {}
         "&str" => {
             func.line(format!("let {} = CString::new({}).unwrap();", var_name, var_name));
             func.line(format!("let {} = {}.as_ptr();", var_name, var_name));
@@ -360,7 +359,7 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Stri
             func.line(format!("{}.do_not_free_on_drop();", var_name));
             func.line(format!("let {} = {}.ptr;", var_name, var_name));
         }
-        x if (x.starts_with("&") && ISL_TYPES_RS.contains(&x[1..])) => {
+        x if (x.starts_with('&') && ISL_TYPES_RS.contains(&x[1..])) => {
             func.line(format!("let {} = {}.ptr;", var_name, var_name));
         }
         _ => unimplemented!("{}", rs_ty_name),
@@ -376,9 +375,17 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
             let var_name = var_name.to_string();
 
             match rs_ty_name.as_str() {
-                "i32" | "u32" | "u64" | "i64" | "f64" | "usize" | "DimType" => {}
+                "i32"
+                | "u32"
+                | "u64"
+                | "i64"
+                | "f64"
+                | "usize"
+                | "DimType"
+                | "*mut c_void"
+                | "unsafe extern \"C\" fn(*mut c_void)" => {}
                 x if (ISL_TYPES_RS.contains(x)
-                      || (x.starts_with("&") && ISL_TYPES_RS.contains(&x[1..]))) =>
+                      || (x.starts_with('&') && ISL_TYPES_RS.contains(&x[1..]))) =>
                 {
                     func.line(format!("let {} = {} {{ ptr: {}, should_free_on_drop: true }};",
                                       var_name, rs_ty_name, var_name));
@@ -425,13 +432,13 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, tokens: Vec
         // println!("Traversing {}", func_decl.get_name().unwrap());
         let arguments = func_decl.get_arguments().unwrap();
         let (start_loc, _) = get_start_end_locations(&func_decl);
-        let start_idx = loc_to_idx[&start_loc];
+        let _start_idx = loc_to_idx[&start_loc];
 
         // {{{ parse borrowing_rules
 
         let mut borrowing_rules: Vec<Option<ISLOwnership>> = vec![];
         for arg in arguments.iter() {
-            let (start_loc, _) = get_start_end_locations(&arg);
+            let (start_loc, _) = get_start_end_locations(arg);
             let qualifier_tok = idx_to_token[loc_to_idx[&start_loc] - 1];
             let borrow_rule = if qualifier_tok.get_kind() == TokenKind::Identifier {
                 match qualifier_tok.get_spelling().as_str() {
@@ -481,19 +488,19 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, tokens: Vec
 
         let extern_func = Function { name: func_decl.get_name().unwrap(),
                                      arg_names: c_arg_names.clone(),
-                                     arg_types: c_arg_types.clone()
-                                                           .into_iter()
-                                                           .map(|x| to_extern_arg_t(x))
+                                     arg_types: c_arg_types.iter()
+                                                           .map(|x| to_extern_arg_t(x).to_string())
                                                            .collect(),
-                                     ret_type: ret_type.clone().map(|x| to_extern_arg_t(x)) };
+                                     ret_type: ret_type.as_ref()
+                                                       .map(|x| to_extern_arg_t(x).to_string()) };
 
         let binding_func =
             Function { name: get_rust_method_name(&func_decl, src_t),
                        arg_names: c_arg_names,
-                       arg_types:
-                           zip(c_arg_types, borrowing_rules).into_iter()
-                                                            .map(|(x, brw)| to_rust_arg_t(x, brw))
-                                                            .collect(),
+                       arg_types: zip(c_arg_types, borrowing_rules).map(|(x, brw)| {
+                                                                       to_rust_arg_t(x, brw)
+                                                                   })
+                                                                   .collect(),
                        ret_type: ret_type.map(|x| to_rust_arg_t(x, Some(ISLOwnership::Take))) };
 
         external_functions.push(extern_func);
@@ -535,7 +542,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                                    && e.get_name().unwrap() != format!("{}_to_list", src_t)
                                    && ! UNSUPPORTED_FUNCS.contains(e.get_name().unwrap().as_str())
                                    && e.get_location().is_some()
-                                   && src_file.to_string()
+                                   && *src_file
                                       == e.get_location().unwrap().get_presumed_location().0
                                })
                                .collect();
@@ -550,7 +557,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
     // {{{ Generate `use ...` statements.
 
     // Always use uintptr_t as dst_t's struct requires it.
-    import_type(&mut scope, &"uintptr_t".to_string());
+    import_type(&mut scope, "uintptr_t");
     for func in extern_funcs.iter().chain(binding_funcs.iter()) {
         match &func.ret_type {
             Some(x) if x != dst_t && &x[1..] != dst_t => import_type(&mut scope, x),
@@ -615,13 +622,17 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
         let mut arg_names_in_fn_body: Vec<String> = vec![];
 
         // emit first argument to the method
-        if bnd_arg_types.len() != 0 && bnd_arg_types[0] == format!("&{}", dst_t) {
+        if bnd_arg_types.first()
+                        .is_some_and(|bnd_arg_type| *bnd_arg_type == format!("&{}", dst_t))
+        {
             // consume the first argument
             impl_fn = impl_fn.arg_ref_self();
             bnd_arg_names = bnd_arg_names[1..].to_vec();
             bnd_arg_types = bnd_arg_types[1..].to_vec();
             arg_names_in_fn_body.push("self".to_string());
-        } else if bnd_arg_types.len() != 0 && bnd_arg_types[0] == dst_t {
+        } else if bnd_arg_types.first()
+                               .is_some_and(|bnd_arg_type| *bnd_arg_type == dst_t)
+        {
             // consume the first argument
             impl_fn = impl_fn.arg_self();
             bnd_arg_names = bnd_arg_names[1..].to_vec();
@@ -652,7 +663,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                 impl_fn.line(format!("let {} = {};", arg_name, arg_name_in_fn_body));
             }
 
-            preprocess_var_to_extern_func(&mut impl_fn, arg_type, arg_name);
+            preprocess_var_to_extern_func(impl_fn, arg_type, arg_name);
         }
 
         let passed_args_str = binding_func.arg_names.join(", ");
@@ -660,9 +671,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
         impl_fn.line(format!("let isl_rs_result = unsafe {{ {}({}) }};",
                              extern_func.name, passed_args_str));
 
-        postprocess_var_from_extern_func(&mut impl_fn,
-                                         binding_func.ret_type.clone(),
-                                         "isl_rs_result");
+        postprocess_var_from_extern_func(impl_fn, binding_func.ret_type.clone(), "isl_rs_result");
 
         // {{{ Do not free isl_ctx* if not from isl_ctx_alloc.
 
@@ -704,8 +713,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
     // Write the generated code
     fs::write(dst_file,
               format!("// Automatically generated by isl_bindings_generator.\n// LICENSE: MIT\n\n{}", scope.to_string())
-              ).expect(format!("error writing to {} file.", dst_file)
-                                                  .as_str());
+              ).unwrap_or_else(|_| panic!("error writing to {} file.", dst_file));
 }
 
 /// Generate rust code to define the `isl_dim_type` enum declation in rust and
@@ -727,12 +735,11 @@ fn define_dim_type_enum(dst_file: &str, src_file: &str) {
     let isl_dim_type_decl = t_unit.get_entity()
                                   .get_children()
                                   .into_iter()
-                                  .filter(|e| {
+                                  .find(|e| {
                                       e.get_kind() == clang::EntityKind::EnumDecl
                                       && e.get_display_name().is_some()
                                       && e.get_display_name().unwrap() == "isl_dim_type"
                                   })
-                                  .next()
                                   .unwrap();
 
     // KK: Assertion to guard assumption
