@@ -369,7 +369,7 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &str,
 /// Updates `func` by adding a line shadowing the variable `var_name` to refer
 /// it's corresponding type in Rust land.
 fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Option<String>,
-                                    var_name: impl ToString) {
+                                    var_name: impl ToString, can_emit_error_message: bool) {
     match rs_ty_name {
         Some(rs_ty_name) => {
             let var_name = var_name.to_string();
@@ -387,6 +387,13 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
                 x if (ISL_TYPES_RS.contains(x)
                       || (x.starts_with('&') && ISL_TYPES_RS.contains(&x[1..]))) =>
                 {
+                    func.line(format!("if {} == 0 {{", var_name));
+                    if can_emit_error_message {
+                        func.line("    panic!(\"ISL error: {}\", context_for_error_message.last_error_msg());");
+                    } else {
+                        func.line("    panic!(\"ISL error\");");
+                    }
+                    func.line("}");
                     func.line(format!("let {} = {} {{ ptr: {}, should_free_on_drop: true }};",
                                       var_name, rs_ty_name, var_name));
                 }
@@ -399,7 +406,7 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
                     func.line(format!("let {} = match {} {{", var_name, var_name));
                     func.line("    0 => false,");
                     func.line("    1 => true,");
-                    func.line("    _ => panic!(\"Got isl_bool = -1\"),");
+                    func.line("    _ => panic!(\"ISL error: {}\", context_for_error_message.last_error_msg()),");
                     func.line("};");
                 }
                 _ => unimplemented!("{}", rs_ty_name),
@@ -641,6 +648,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
         let mut impl_fn = dst_impl.new_fn(binding_func.name.as_str())
                                   .vis("pub")
                                   .doc(format!("Wraps `{}`.", extern_func.name).as_str());
+
         // FIXME: /!\ Big FIXME. This logic doesn't account
         let mut bnd_arg_names: Vec<String> = binding_func.arg_names.clone();
         let mut bnd_arg_types: Vec<String> = binding_func.arg_types.clone();
@@ -679,6 +687,25 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
             None => impl_fn,
         };
 
+        // Store context in case we need it later for error handling
+        let can_emit_error_message = if let Some(rs_ty_name) = &binding_func.ret_type {
+            let rs_ty_name = rs_ty_name.as_str();
+            if rs_ty_name != "Context"
+               && arg_names_in_fn_body.first()
+                                      .is_some_and(|name| name == "self")
+               && (ISL_TYPES_RS.contains(rs_ty_name)
+                   || (rs_ty_name.starts_with('&') && ISL_TYPES_RS.contains(&rs_ty_name[1..]))
+                   || rs_ty_name == "bool")
+            {
+                impl_fn.line("let context_for_error_message = self.get_ctx();");
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         // Implement the function
         for (arg_type, (arg_name, arg_name_in_fn_body)) in zip(binding_func.arg_types.iter(),
                                                                zip(binding_func.arg_names.iter(),
@@ -696,7 +723,10 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
         impl_fn.line(format!("let isl_rs_result = unsafe {{ {}({}) }};",
                              extern_func.name, passed_args_str));
 
-        postprocess_var_from_extern_func(impl_fn, binding_func.ret_type.clone(), "isl_rs_result");
+        postprocess_var_from_extern_func(impl_fn,
+                                         binding_func.ret_type.clone(),
+                                         "isl_rs_result",
+                                         can_emit_error_message);
 
         // {{{ Do not free isl_ctx* if not from isl_ctx_alloc.
 
