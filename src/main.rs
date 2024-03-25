@@ -858,8 +858,9 @@ fn define_dim_type_enum(dst_file: &str, src_file: &str) {
     let dim_type_enum = scope.new_enum(C_TO_RS_BINDING["enum isl_dim_type"])
                              .vis("pub")
                              .repr("C")
-                             .derive("Debug")
-                             .derive("Clone");
+                             .derive("Clone")
+                             .derive("Copy")
+                             .derive("Debug");
     for c_variant_name in c_variant_names {
         let name_in_rust = c_variant_name[8..].to_string(); // 8 = len("isl_dim_")
                                                             // convert variant name to camel case
