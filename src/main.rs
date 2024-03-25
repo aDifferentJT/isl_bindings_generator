@@ -636,6 +636,40 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
 
     // }}}
 
+    // {{{ impl Arithmetic Ops for `dst_t`.
+
+    for (trait_name, impl_fn_name, fn_name) in [("core::ops::Add", "add", "add"),
+                                                ("core::ops::Sub", "sub", "sub"),
+                                                ("core::ops::Mul", "mul", "mul"),
+                                                ("core::ops::Div", "div", "div"),
+                                                ("core::ops::Rem", "rem", "mod_")]
+    {
+        if binding_funcs.iter().any(|Function { name,
+                                                arg_names: _,
+                                                arg_types,
+                                                ret_type, }| {
+                                        matches!((&name[..], &arg_types[..], ret_type),
+                                        (fn_name2, [arg1_type, arg2_type], Some(ret_type))
+                                            if fn_name == fn_name2
+                                               && arg1_type == dst_t
+                                               && arg2_type == dst_t
+                                               && ret_type == dst_t
+                                        )
+                                    })
+        {
+            let clone_impl = scope.new_impl(dst_t);
+            clone_impl.impl_trait(trait_name);
+            clone_impl.associate_type("Output", dst_t);
+            clone_impl.new_fn(impl_fn_name)
+                      .arg_self()
+                      .arg("rhs", dst_t)
+                      .ret(dst_t)
+                      .line(format!("self.{}(rhs)", fn_name));
+        }
+    }
+
+    // }}}
+
     // {{{ Implement the struct 'dst_t'
 
     let dst_impl = scope.new_impl(dst_t);
