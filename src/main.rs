@@ -636,6 +636,34 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
 
     // }}}
 
+    // {{{ impl PartialEq, Eq for `dst_t`.
+
+    if binding_funcs.iter().any(|Function { name,
+                                            arg_names: _,
+                                            arg_types,
+                                            ret_type, }| {
+                                    matches!((&name[..], &arg_types[..], ret_type),
+                                    ("is_equal", [arg1_type, arg2_type], Some(ret_type))
+                                        if arg1_type.strip_prefix('&') == Some(dst_t)
+                                           && arg2_type.strip_prefix('&') == Some(dst_t)
+                                           && ret_type == "bool"
+                                    )
+                                })
+    {
+        let partial_eq_impl = scope.new_impl(dst_t);
+        partial_eq_impl.impl_trait("PartialEq");
+        partial_eq_impl.new_fn("eq")
+                       .arg_ref_self()
+                       .arg("other", "&Self")
+                       .ret("bool")
+                       .line("self.is_equal(other)");
+
+        let eq_impl = scope.new_impl(dst_t);
+        eq_impl.impl_trait("Eq");
+    }
+
+    // }}}
+
     // {{{ impl Arithmetic Ops for `dst_t`.
 
     for (trait_name, impl_fn_name, fn_name) in [("core::ops::Add", "add", "add"),
@@ -657,10 +685,10 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                                         )
                                     })
         {
-            let clone_impl = scope.new_impl(dst_t);
-            clone_impl.impl_trait(trait_name);
-            clone_impl.associate_type("Output", dst_t);
-            clone_impl.new_fn(impl_fn_name)
+            let trait_impl = scope.new_impl(dst_t);
+            trait_impl.impl_trait(trait_name);
+            trait_impl.associate_type("Output", dst_t);
+            trait_impl.new_fn(impl_fn_name)
                       .arg_self()
                       .arg("rhs", dst_t)
                       .ret(dst_t)

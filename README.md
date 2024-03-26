@@ -23,4 +23,4 @@ cargo run
   - [ ] Supporting more types like `qpolynomial`, `pwqpolynomial`, `isl_schedule`.
   - [ ] Fixing the docs build at `docs.rs`.
   - [ ] Supporting functions that take at least parameters with `__isl_give`.
-  - [ ] Implementing standard traits `Eq`, `Display`, `Debug` for the core types.
+  - [ ] Implementing standard traits `Display`, `Debug` for the core types.
