@@ -18,7 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use clang::token::{Token, TokenKind};
 use codegen::Scope;
 use hashbrown::{HashMap, HashSet};
 use lazy_static::lazy_static;
@@ -32,17 +31,26 @@ lazy_static! {
                        ("isl_space *", "Space"),
                        ("isl_local_space *", "LocalSpace"),
                        ("isl_id *", "Id"),
+                       ("isl_id_list *", "IdList"),
                        ("isl_val *", "Val"),
+                       ("isl_val_list *", "ValList"),
                        ("isl_point *", "Point"),
                        ("isl_mat *", "Mat"),
                        ("isl_vec *", "Vec"),
                        ("isl_basic_set *", "BasicSet"),
+                       ("isl_basic_set_list *", "BasicSetList"),
                        ("isl_set *", "Set"),
+                       ("isl_set_list *", "SetList"),
                        ("isl_basic_map *", "BasicMap"),
+                       ("isl_basic_map_list *", "BasicMapList"),
                        ("isl_map *", "Map"),
+                       ("isl_map_list *", "MapList"),
                        ("isl_constraint *", "Constraint"),
+                       ("isl_constraint_list *", "ConstraintList"),
                        ("isl_aff *", "Aff"),
+                       ("isl_aff_list *", "AffList"),
                        ("isl_pw_aff *", "PwAff"),
+                       ("isl_pw_aff_list *", "PwAffList"),
                        ("isl_stride_info *", "StrideInfo"),
                        ("isl_fixed_box *", "FixedBox"),
                        ("enum isl_dim_type", "DimType"),
@@ -51,17 +59,26 @@ lazy_static! {
                                                                       "isl_space *",
                                                                       "isl_local_space *",
                                                                       "isl_id *",
+                                                                      "isl_id_list *",
                                                                       "isl_val *",
+                                                                      "isl_val_list *",
                                                                       "isl_point *",
                                                                       "isl_mat *",
                                                                       "isl_vec *",
                                                                       "isl_basic_set *",
+                                                                      "isl_basic_set_list *",
                                                                       "isl_set *",
+                                                                      "isl_set_list *",
                                                                       "isl_basic_map *",
+                                                                      "isl_basic_map_list *",
                                                                       "isl_map *",
+                                                                      "isl_map_list *",
                                                                       "isl_constraint *",
+                                                                      "isl_constraint_list *",
                                                                       "isl_aff *",
+                                                                      "isl_aff_list *",
                                                                       "isl_pw_aff *",
+                                                                      "isl_pw_aff_list *",
                                                                       "isl_stride_info *",
                                                                       "isl_fixed_box *",
                                                                       "isl_printer *",]);
@@ -84,35 +101,23 @@ lazy_static! {
                        "isl_val **",
                        "int *",
                        "isl_bool *",
-                       "isl_bool (*)(isl_set *, isl_aff *, void *)",
                        "isl_stat",
-                       "isl_stat (*)(isl_basic_set *, void *)",
-                       "isl_stat (*)(isl_point *, void *)",
                        "struct isl_args *",
                        "struct isl_options *",
                        "const void *",
                        "char **",
                        "isl_mat **",
                        "enum isl_error",
-                       "isl_id_list *",
-                       "isl_val_list *",
-                       "isl_basic_set_list *",
-                       "isl_basic_map_list *",
-                       "isl_set_list *",
-                       "isl_map_list *",
-                       "isl_constraint_list *",
-                       "isl_aff_list *",
-                       "isl_pw_aff_list *",
-                       "isl_pw_multi_aff_list *",
-                       "isl_union_pw_aff_list *",
-                       "isl_union_pw_multi_aff_list *",
                        "isl_constraint **",
                        "struct isl_constraint **",
                        "isl_union_pw_aff *",
                        "isl_multi_aff *",
                        "isl_multi_pw_aff *",
                        "isl_pw_multi_aff *",
+                       "isl_pw_multi_aff_list *",
+                       "isl_union_pw_aff_list *",
                        "isl_union_pw_multi_aff *",
+                       "isl_union_pw_multi_aff_list *",
                        "isl_multi_union_pw_aff *",
                        "isl_multi_val *",
                        "isl_multi_id *",
@@ -130,49 +135,6 @@ lazy_static! {
     // TODO: Once we reduce this set down to 0, we are done!
     static ref UNSUPPORTED_FUNCS: HashSet<&'static str> =
         HashSet::from(["isl_printer_print_id_list"]);
-}
-
-/// Returns the lexicographic ordering of `x` and `y`.
-fn compare_tuples(x: &(usize, usize), y: &(usize, usize)) -> std::cmp::Ordering {
-    if x.0 == y.0 && x.1 == y.1 {
-        std::cmp::Ordering::Equal
-    } else if (x.0 < y.0) || (x.0 == y.0 && x.1 < y.1) {
-        std::cmp::Ordering::Less
-    } else {
-        std::cmp::Ordering::Greater
-    }
-}
-
-fn get_tokens_sorted_by_occurence(tokens: Vec<Token>)
-                                  -> (HashMap<(usize, usize), usize>, Vec<Token>) {
-    let mut loc_to_token: HashMap<(usize, usize), Token> = HashMap::new();
-    for token in tokens {
-        let loc = token.get_location();
-        let (_, src_line, src_column) = loc.get_presumed_location();
-        let key = (src_line as usize, src_column as usize);
-        loc_to_token.insert(key, token);
-    }
-
-    let mut sorted_locations: Vec<(usize, usize)> = loc_to_token.clone().into_keys().collect();
-    sorted_locations.sort_by(compare_tuples);
-
-    let position_to_token: Vec<_> = sorted_locations.iter().map(|x| loc_to_token[x]).collect();
-    let mut loc_to_position: HashMap<(usize, usize), usize> = HashMap::new();
-    for (i, loc) in sorted_locations.into_iter().enumerate() {
-        loc_to_position.insert(loc, i);
-    }
-
-    (loc_to_position, position_to_token)
-}
-
-/// Returns the `(start_line, start_column), (end_line, end_column)` describing
-/// source range of `e`.
-fn get_start_end_locations(e: &clang::Entity) -> ((usize, usize), (usize, usize)) {
-    let src_range = e.get_range().unwrap();
-    let start_src_loc = src_range.get_start().get_presumed_location();
-    let end_src_loc = src_range.get_end().get_presumed_location();
-    ((start_src_loc.1 as usize, start_src_loc.2 as usize),
-     (end_src_loc.1 as usize, end_src_loc.2 as usize))
 }
 
 /// Records the properties of a function node in an AST.
@@ -218,7 +180,7 @@ fn is_isl_type(c_arg_t: &str) -> bool {
 /// Returns `true` only if `c_arg_t` is a type not supported by
 /// [`isl_bindings_generator`].
 fn is_type_not_supported(c_arg_t: &str) -> bool {
-    UNSUPPORTED_C_TYPES.contains(c_arg_t)
+    UNSUPPORTED_C_TYPES.contains(c_arg_t) || c_arg_t.contains("(*)")
 }
 
 /// Returns the name for `c_arg_t` to use in `extern "C"` block function
@@ -426,46 +388,44 @@ fn get_rust_method_name(func_decl: &clang::Entity, c_struct_t: &str) -> String {
     guard_identifier(name_in_rust)
 }
 
-fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, tokens: Vec<Token>,
-                                     src_t: &str)
+fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, src_t: &str)
                                      -> (Vec<Function>, Vec<Function>) {
     // external_functions: External functions that must be declared.
     let mut external_functions: Vec<Function> = vec![];
     // bindings_functions: Rust functions that are to be generated.
     let mut bindings_functions: Vec<Function> = vec![];
-    let (loc_to_idx, idx_to_token) = get_tokens_sorted_by_occurence(tokens);
 
     for func_decl in func_decls {
         // println!("Traversing {}", func_decl.get_name().unwrap());
         let arguments = func_decl.get_arguments().unwrap();
-        let (start_loc, _) = get_start_end_locations(&func_decl);
-        let _start_idx = loc_to_idx[&start_loc];
 
         // {{{ parse borrowing_rules
-
         let mut borrowing_rules: Vec<Option<ISLOwnership>> = vec![];
         for arg in arguments.iter() {
-            let (start_loc, _) = get_start_end_locations(arg);
-            let qualifier_tok = idx_to_token[loc_to_idx[&start_loc] - 1];
-            let borrow_rule = if qualifier_tok.get_kind() == TokenKind::Identifier {
-                match qualifier_tok.get_spelling().as_str() {
-                    "__isl_take" => Some(ISLOwnership::Take),
-                    "__isl_keep" => Some(ISLOwnership::Keep),
-                    "__isl_give" => None, // FIXME
-                    x => panic!("Unknown ownership rule {} in {}",
-                                x,
-                                func_decl.get_name().unwrap()),
+            let arg_children = arg.get_children();
+            let qualifier =
+                arg_children.iter()
+                            .find(|entity| entity.get_kind() == clang::EntityKind::AnnotateAttr)
+                            .and_then(|entity| entity.get_display_name());
+            let borrow_rule = match qualifier.as_deref() {
+                Some("isl_take") => Some(ISLOwnership::Take),
+                Some("isl_keep") => Some(ISLOwnership::Keep),
+                Some("isl_give") => None, // FIXME
+                Some(x) => panic!("Unknown ownership rule {} in {}",
+                                  x,
+                                  func_decl.get_name().unwrap()),
+                None => {
+                    if arg.get_type().unwrap().get_display_name() == "isl_ctx *"
+                       || arg.get_type().unwrap().get_display_name() == "struct isl_ctx *"
+                    {
+                        // isl_ctx is always kept
+                        Some(ISLOwnership::Keep)
+                    } else if func_decl.get_name().unwrap().ends_with("_copy") {
+                        Some(ISLOwnership::Keep)
+                    } else {
+                        None
+                    }
                 }
-            } else if arg.get_type().unwrap().get_display_name() == "isl_ctx *"
-                      || arg.get_type().unwrap().get_display_name() == "struct isl_ctx *"
-            {
-                // isl_ctx is always kept
-                Some(ISLOwnership::Keep)
-            } else if func_decl.get_name().unwrap().ends_with("_copy") {
-                Some(ISLOwnership::Keep)
-            } else {
-                assert_eq!(qualifier_tok.get_kind(), TokenKind::Punctuation);
-                None
             };
 
             borrowing_rules.push(borrow_rule);
@@ -529,10 +489,9 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                  .map(|src_file| {
                      let t_unit =
                          index.parser(src_file)
-                              .arguments(&["-I", "isl/include/", "-I", "/usr/lib64/clang/13/include"])
+                              .arguments(&["-I", "isl/include/", "-I", "/usr/lib64/clang/13/include", "-D", "__isl_take=[[clang::annotate(\"isl_take\")]]", "-D", "__isl_keep=[[clang::annotate(\"isl_keep\")]]", "-D", "__isl_give=[[clang::annotate(\"isl_give\")]]"])
                               .parse()
                               .unwrap();
-                     let tokens = t_unit.get_entity().get_range().unwrap().tokenize();
 
                      // func_decls: Functions for which bindings are to be generated
                      let func_decls: Vec<_> =
@@ -553,7 +512,7 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                                       == e.get_location().unwrap().get_presumed_location().0
                                })
                                .collect();
-                     get_extern_and_bindings_functions(func_decls, tokens, src_t)
+                     get_extern_and_bindings_functions(func_decls, src_t)
                  })
                  .unzip();
     let extern_funcs = extern_funcs.concat();
@@ -660,6 +619,28 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
 
         let eq_impl = scope.new_impl(dst_t);
         eq_impl.impl_trait("Eq");
+    }
+
+    // }}}
+
+    // {{{ impl FromIterator for `dst_t`.
+
+    if let Some(elem_t) = dst_t.strip_suffix("List") {
+        let from_iterator_impl = scope.new_impl(dst_t);
+        from_iterator_impl.impl_trait(format!("FromIterator<{}>", elem_t));
+        from_iterator_impl.new_fn("from_iter")
+                          .generic("T")
+                          .bound("T", format!("IntoIterator<Item = {}>", elem_t))
+                          .arg("iter", "T")
+                          .ret("Self")
+                          .line("let mut iter = iter.into_iter().peekable();")
+                          .line("let ctx = iter.peek().unwrap().get_ctx();")
+                          .line("let (size, _) = iter.size_hint();")
+                          .line("let mut res = Self::alloc(&ctx, size as _);")
+                          .line("for x in iter {")
+                          .line("res = res.add(x);")
+                          .line("}")
+                          .line("res");
     }
 
     // }}}
@@ -935,19 +916,28 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("mod space;");
     scope.raw("mod local_space;");
     scope.raw("mod id;");
+    scope.raw("mod id_list;");
     // scope.raw("mod multi_id;");
     scope.raw("mod val;");
+    scope.raw("mod val_list;");
     // scope.raw("mod multi_val;");
     scope.raw("mod point;");
     scope.raw("mod mat;");
     scope.raw("mod vec;");
     scope.raw("mod bset;");
+    scope.raw("mod bset_list;");
     scope.raw("mod set;");
+    scope.raw("mod set_list;");
     scope.raw("mod bmap;");
+    scope.raw("mod bmap_list;");
     scope.raw("mod map;");
+    scope.raw("mod map_list;");
     scope.raw("mod constraint;");
+    scope.raw("mod constraint_list;");
     scope.raw("mod aff;");
+    scope.raw("mod aff_list;");
     scope.raw("mod pw_aff;");
+    scope.raw("mod pw_aff_list;");
     scope.raw("mod printer;");
 
     scope.raw("pub use dim_type::DimType;");
@@ -958,19 +948,28 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("pub use space::Space;");
     scope.raw("pub use local_space::LocalSpace;");
     scope.raw("pub use id::Id;");
+    scope.raw("pub use id_list::IdList;");
     // scope.raw("pub use multi_id::MultiId;");
     scope.raw("pub use val::Val;");
+    scope.raw("pub use val_list::ValList;");
     // scope.raw("pub use multi_val::MultiVal;");
     scope.raw("pub use point::Point;");
     scope.raw("pub use mat::Mat;");
     scope.raw("pub use vec::Vec;");
     scope.raw("pub use bset::BasicSet;");
+    scope.raw("pub use bset_list::BasicSetList;");
     scope.raw("pub use set::Set;");
+    scope.raw("pub use set_list::SetList;");
     scope.raw("pub use bmap::BasicMap;");
+    scope.raw("pub use bmap_list::BasicMapList;");
     scope.raw("pub use map::Map;");
+    scope.raw("pub use map_list::MapList;");
     scope.raw("pub use constraint::Constraint;");
+    scope.raw("pub use constraint_list::ConstraintList;");
     scope.raw("pub use aff::Aff;");
+    scope.raw("pub use aff_list::AffList;");
     scope.raw("pub use pw_aff::PwAff;");
+    scope.raw("pub use pw_aff_list::PwAffList;");
     scope.raw("pub use printer::Printer;");
 
     // Write the generated code
@@ -1004,9 +1003,17 @@ fn main() {
                        "isl_id",
                        "src/bindings/id.rs",
                        &["isl/include/isl/id.h"]);
+    implement_bindings("IdList",
+                       "isl_id_list",
+                       "src/bindings/id_list.rs",
+                       &["isl/include/isl/id.h"]);
     implement_bindings("Val",
                        "isl_val",
                        "src/bindings/val.rs",
+                       &["isl/include/isl/val.h"]);
+    implement_bindings("ValList",
+                       "isl_val_list",
+                       "src/bindings/val_list.rs",
                        &["isl/include/isl/val.h"]);
     implement_bindings("Point",
                        "isl_point",
@@ -1024,29 +1031,57 @@ fn main() {
                        "isl_basic_set",
                        "src/bindings/bset.rs",
                        &["isl/include/isl/set.h", "isl/include/isl/constraint.h"]);
+    implement_bindings("BasicSetList",
+                       "isl_basic_set_list",
+                       "src/bindings/bset_list.rs",
+                       &["isl/include/isl/map_type.h", "isl/include/isl/set.h"]);
     implement_bindings("Set",
                        "isl_set",
                        "src/bindings/set.rs",
                        &["isl/include/isl/set.h", "isl/include/isl/constraint.h"]);
+    implement_bindings("SetList",
+                       "isl_set_list",
+                       "src/bindings/set_list.rs",
+                       &["isl/include/isl/map_type.h", "isl/include/isl/set.h"]);
     implement_bindings("BasicMap",
                        "isl_basic_map",
                        "src/bindings/bmap.rs",
                        &["isl/include/isl/map.h", "isl/include/isl/constraint.h"]);
+    implement_bindings("BasicMapList",
+                       "isl_basic_map_list",
+                       "src/bindings/bmap_list.rs",
+                       &["isl/include/isl/map_type.h", "isl/include/isl/map.h"]);
     implement_bindings("Map",
                        "isl_map",
                        "src/bindings/map.rs",
                        &["isl/include/isl/map.h", "isl/include/isl/constraint.h"]);
+    implement_bindings("MapList",
+                       "isl_map_list",
+                       "src/bindings/map_list.rs",
+                       &["isl/include/isl/map_type.h", "isl/include/isl/map.h"]);
     implement_bindings("Constraint",
                        "isl_constraint",
                        "src/bindings/constraint.rs",
+                       &["isl/include/isl/constraint.h"]);
+    implement_bindings("ConstraintList",
+                       "isl_constraint_list",
+                       "src/bindings/constraint_list.rs",
                        &["isl/include/isl/constraint.h"]);
     implement_bindings("Aff",
                        "isl_aff",
                        "src/bindings/aff.rs",
                        &["isl/include/isl/aff.h"]);
+    implement_bindings("AffList",
+                       "isl_aff_list",
+                       "src/bindings/aff_list.rs",
+                       &["isl/include/isl/aff.h"]);
     implement_bindings("PwAff",
                        "isl_pw_aff",
                        "src/bindings/pw_aff.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("PwAffList",
+                       "isl_pw_aff_list",
+                       "src/bindings/pw_aff_list.rs",
                        &["isl/include/isl/aff.h"]);
     implement_bindings("StrideInfo",
                        "isl_stride_info",

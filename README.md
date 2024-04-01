@@ -18,7 +18,6 @@ cargo run
 
 - License: MIT
 * Problems yet to be solved:
-  - [ ] Extracting tokens from functions defined using macros. For eg. `isl_(id|aff|...)_list_from_(id|aff|...)`. Currently `clang`'s tokenizer fails for such entities.
   - [ ] Supporting functions that take in a callback. For eg. `isl_for_each_point`.
   - [ ] Supporting more types like `qpolynomial`, `pwqpolynomial`, `isl_schedule`.
   - [ ] Fixing the docs build at `docs.rs`.
