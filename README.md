@@ -19,7 +19,7 @@ cargo run
 - License: MIT
 * Problems yet to be solved:
   - [ ] Supporting functions that take in a callback. For eg. `isl_for_each_point`.
-  - [ ] Supporting more types like `qpolynomial`, `pwqpolynomial`, `isl_schedule`.
+  - [ ] Supporting more types like `isl_schedule`.
   - [ ] Fixing the docs build at `docs.rs`.
   - [ ] Supporting functions that take at least parameters with `__isl_give`.
   - [ ] Implementing standard traits `Display`, `Debug` for the core types.

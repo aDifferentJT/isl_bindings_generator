@@ -20,6 +20,7 @@
 
 use codegen::Scope;
 use hashbrown::{HashMap, HashSet};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::fs;
 use std::iter::zip;
@@ -45,15 +46,44 @@ lazy_static! {
                        ("isl_basic_map_list *", "BasicMapList"),
                        ("isl_map *", "Map"),
                        ("isl_map_list *", "MapList"),
+                       ("isl_union_set *", "UnionSet"),
+                       ("isl_union_set_list *", "UnionSetList"),
+                       ("isl_union_map *", "UnionMap"),
+                       ("isl_union_map_list *", "UnionMapList"),
                        ("isl_constraint *", "Constraint"),
                        ("isl_constraint_list *", "ConstraintList"),
                        ("isl_aff *", "Aff"),
                        ("isl_aff_list *", "AffList"),
+                       ("isl_term *", "Term"),
+                       ("isl_qpolynomial *", "QPolynomial"),
+                       ("isl_qpolynomial_list *", "QPolynomialList"),
+                       ("isl_qpolynomial_fold *", "QPolynomialFold"),
+                       ("isl_multi_id *", "MultiId"),
+                       ("isl_multi_val *", "MultiVal"),
+                       ("isl_multi_aff *", "MultiAff"),
+                       ("isl_multi_pw_aff *", "MultiPwAff"),
+                       ("isl_multi_union_pw_aff *", "MultiUnionPwAff"),
                        ("isl_pw_aff *", "PwAff"),
                        ("isl_pw_aff_list *", "PwAffList"),
+                       ("isl_pw_multi_aff *", "PwMultiAff"),
+                       ("isl_pw_multi_aff_list *", "PwMultiAffList"),
+                       ("isl_pw_qpolynomial *", "PwQPolynomial"),
+                       ("isl_pw_qpolynomial_list *", "PwQPolynomialList"),
+                       ("isl_pw_qpolynomial_fold *", "PwQPolynomialFold"),
+                       ("isl_pw_qpolynomial_fold_list *", "PwQPolynomialFoldList"),
+                       ("isl_union_pw_aff *", "UnionPwAff"),
+                       ("isl_union_pw_aff_list *", "UnionPwAffList"),
+                       ("isl_union_pw_multi_aff *", "UnionPwMultiAff"),
+                       ("isl_union_pw_multi_aff_list *", "UnionPwMultiAffList"),
+                       ("isl_union_pw_qpolynomial *", "UnionPwQPolynomial"),
+                       ("isl_union_pw_qpolynomial_fold *", "UnionPwQPolynomialFold"),
                        ("isl_stride_info *", "StrideInfo"),
                        ("isl_fixed_box *", "FixedBox"),
                        ("enum isl_dim_type", "DimType"),
+                       ("enum isl_error", "Error"),
+                       ("enum isl_fold", "Fold"),
+                       ("enum isl_stat", "Stat"),
+                       ("isl_stat", "Stat"),
                        ("isl_printer *", "Printer")]);
     static ref ISL_CORE_TYPES: HashSet<&'static str> = HashSet::from(["isl_ctx *",
                                                                       "isl_space *",
@@ -73,15 +103,41 @@ lazy_static! {
                                                                       "isl_basic_map_list *",
                                                                       "isl_map *",
                                                                       "isl_map_list *",
+                                                                      "isl_union_set *",
+                                                                      "isl_union_set_list *",
+                                                                      "isl_union_map *",
+                                                                      "isl_union_map_list *",
                                                                       "isl_constraint *",
                                                                       "isl_constraint_list *",
                                                                       "isl_aff *",
                                                                       "isl_aff_list *",
+                                                                      "isl_term *",
+                                                                      "isl_qpolynomial *",
+                                                                      "isl_qpolynomial_list *",
+                                                                      "isl_qpolynomial_fold *",
+                                                                      "isl_multi_id *",
+                                                                      "isl_multi_val *",
+                                                                      "isl_multi_aff *",
+                                                                      "isl_multi_pw_aff *",
+                                                                      "isl_multi_union_pw_aff *",
                                                                       "isl_pw_aff *",
                                                                       "isl_pw_aff_list *",
+                                                                      "isl_pw_multi_aff *",
+                                                                      "isl_pw_multi_aff_list *",
+                                                                      "isl_pw_qpolynomial *",
+                                                                      "isl_pw_qpolynomial_list *",
+                                                                      "isl_pw_qpolynomial_fold *",
+                                                                      "isl_pw_qpolynomial_fold_list *",
+                                                                      "isl_union_pw_aff *",
+                                                                      "isl_union_pw_aff_list *",
+                                                                      "isl_union_pw_multi_aff *",
+                                                                      "isl_union_pw_multi_aff_list *",
+                                                                      "isl_union_pw_qpolynomial *",
+                                                                      "isl_union_pw_qpolynomial_fold *",
                                                                       "isl_stride_info *",
                                                                       "isl_fixed_box *",
-                                                                      "isl_printer *",]);
+                                                                      "isl_printer *",
+                                                                      ]);
     static ref ISL_TYPES_RS: HashSet<&'static str> =
         HashSet::from_iter(C_TO_RS_BINDING.clone().into_values());
     static ref KEYWORD_TO_IDEN: HashMap<&'static str, &'static str> =
@@ -97,48 +153,16 @@ lazy_static! {
     // TODO: Once we reduce this set down to 0, we are done!
     static ref UNSUPPORTED_C_TYPES: HashSet<&'static str> =
         HashSet::from(["FILE *", "const FILE *",
-                       "isl_set **",
-                       "isl_val **",
                        "int *",
                        "isl_bool *",
-                       "isl_stat",
                        "struct isl_args *",
                        "struct isl_options *",
                        "const void *",
-                       "char **",
-                       "isl_mat **",
-                       "enum isl_error",
-                       "isl_constraint **",
-                       "struct isl_constraint **",
-                       "isl_union_pw_aff *",
-                       "isl_multi_aff *",
-                       "isl_multi_pw_aff *",
-                       "isl_pw_multi_aff *",
-                       "isl_pw_multi_aff_list *",
-                       "isl_union_pw_aff_list *",
-                       "isl_union_pw_multi_aff *",
-                       "isl_union_pw_multi_aff_list *",
-                       "isl_multi_union_pw_aff *",
-                       "isl_multi_val *",
-                       "isl_multi_id *",
-                       "isl_qpolynomial *",
-                       "isl_pw_qpolynomial *",
-                       "isl_qpolynomial_fold *",
-                       "isl_pw_qpolynomial_fold *",
-                       "isl_union_pw_qpolynomial *",
-                       "isl_union_pw_qpolynomial_fold *",
-                       "isl_qpolynomial_list *",
-                       "isl_pw_qpolynomial_list *",
-                       "isl_pw_qpolynomial_fold_list *",
         ]);
-
-    // TODO: Once we reduce this set down to 0, we are done!
-    static ref UNSUPPORTED_FUNCS: HashSet<&'static str> =
-        HashSet::from(["isl_printer_print_id_list"]);
 }
 
 /// Records the properties of a function node in an AST.
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 struct Function {
     /// name of the function symbol
     name: String,
@@ -166,7 +190,8 @@ fn guard_identifier(input: impl ToString) -> String {
 }
 
 /// Returns `true` only if `c_arg_t` is reference to a core isl object.
-/// Note that we do not consider `isl_dim_type` to be a core isl object.
+/// Note that we do not consider `isl_dim_type`, `isl_error`, `isl_fold`, or
+/// `isl_stat` to be core isl objects.
 fn is_isl_type(c_arg_t: &str) -> bool {
     let c_arg_t = &c_arg_t.to_string()[..];
 
@@ -180,13 +205,18 @@ fn is_isl_type(c_arg_t: &str) -> bool {
 /// Returns `true` only if `c_arg_t` is a type not supported by
 /// [`isl_bindings_generator`].
 fn is_type_not_supported(c_arg_t: &str) -> bool {
-    UNSUPPORTED_C_TYPES.contains(c_arg_t) || c_arg_t.contains("(*)")
+    // TODO this dismisses all callbacks and out pointers
+    UNSUPPORTED_C_TYPES.contains(c_arg_t) || c_arg_t.contains("(*)") || c_arg_t.contains("**")
 }
 
 /// Returns the name for `c_arg_t` to use in `extern "C"` block function
 /// declarations.
 fn to_extern_arg_t(c_arg_t: &str) -> &str {
-    if c_arg_t == "enum isl_dim_type" {
+    if c_arg_t == "enum isl_dim_type"
+       || c_arg_t == "enum isl_error"
+       || c_arg_t == "enum isl_fold"
+       || c_arg_t == "isl_stat"
+    {
         C_TO_RS_BINDING[c_arg_t]
     } else if is_isl_type(c_arg_t) {
         "uintptr_t"
@@ -224,7 +254,11 @@ fn to_extern_arg_t(c_arg_t: &str) -> &str {
 /// Returns the name for `c_arg_t` to use in the rust-binding function.
 fn to_rust_arg_t(c_arg_t: String, ownership: Option<ISLOwnership>) -> String {
     let c_arg_t = c_arg_t.as_str();
-    if c_arg_t == "enum isl_dim_type" {
+    if c_arg_t == "enum isl_dim_type"
+       || c_arg_t == "enum isl_error"
+       || c_arg_t == "enum isl_fold"
+       || c_arg_t == "isl_stat"
+    {
         C_TO_RS_BINDING[c_arg_t].to_string()
     } else if is_isl_type(c_arg_t) {
         let c_arg_t = c_arg_t.strip_prefix("const ")
@@ -310,6 +344,9 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &str,
         | "f64"
         | "usize"
         | "DimType"
+        | "Error"
+        | "Fold"
+        | "Stat"
         | "*mut c_void"
         | "unsafe extern \"C\" fn(*mut c_void)" => {}
         "&str" => {
@@ -344,6 +381,9 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
                 | "f64"
                 | "usize"
                 | "DimType"
+                | "Error"
+                | "Fold"
+                | "Stat"
                 | "*mut c_void"
                 | "unsafe extern \"C\" fn(*mut c_void)" => {}
                 x if (ISL_TYPES_RS.contains(x)
@@ -368,7 +408,11 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
                     func.line(format!("let {} = match {} {{", var_name, var_name));
                     func.line("    0 => false,");
                     func.line("    1 => true,");
-                    func.line("    _ => panic!(\"ISL error: {}\", context_for_error_message.last_error_msg()),");
+                    if can_emit_error_message {
+                        func.line("    _ => panic!(\"ISL error: {}\", context_for_error_message.last_error_msg()),");
+                    } else {
+                        func.line("    _ => panic!(\"ISL error\"),");
+                    }
                     func.line("};");
                 }
                 _ => unimplemented!("{}", rs_ty_name),
@@ -389,11 +433,10 @@ fn get_rust_method_name(func_decl: &clang::Entity, c_struct_t: &str) -> String {
 }
 
 fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, src_t: &str)
-                                     -> (Vec<Function>, Vec<Function>) {
+                                     -> HashSet<(Function, Function)> {
     // external_functions: External functions that must be declared.
-    let mut external_functions: Vec<Function> = vec![];
     // bindings_functions: Rust functions that are to be generated.
-    let mut bindings_functions: Vec<Function> = vec![];
+    let mut extern_and_bindings_functions: HashSet<(Function, Function)> = HashSet::new();
 
     for func_decl in func_decls {
         // println!("Traversing {}", func_decl.get_name().unwrap());
@@ -470,11 +513,10 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, src_t: &str
                                                                    .collect(),
                        ret_type: ret_type.map(|x| to_rust_arg_t(x, Some(ISLOwnership::Take))) };
 
-        external_functions.push(extern_func);
-        bindings_functions.push(binding_func);
+        extern_and_bindings_functions.insert((extern_func, binding_func));
     }
 
-    (external_functions, bindings_functions)
+    extern_and_bindings_functions
 }
 
 /// Generates Rust bindings for type `dst_t` from the C-struct `src_t`. Searches
@@ -504,19 +546,13 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                                    && e.get_name().unwrap().starts_with(src_t)
                                    // match isl_set, but not isl_set_list
                                    && ! e.get_name().unwrap().starts_with(format!("{}_list", src_t).as_str())
-                                   // FIXME: to_list functions have unfavorable tokens
-                                   && e.get_name().unwrap() != format!("{}_to_list", src_t)
-                                   && ! UNSUPPORTED_FUNCS.contains(e.get_name().unwrap().as_str())
                                    && e.get_location().is_some()
                                    && *src_file
                                       == e.get_location().unwrap().get_presumed_location().0
                                })
                                .collect();
                      get_extern_and_bindings_functions(func_decls, src_t)
-                 })
-                 .unzip();
-    let extern_funcs = extern_funcs.concat();
-    let binding_funcs = binding_funcs.concat();
+                 }).concat().into_iter().unzip();
 
     let mut scope = Scope::new();
 
@@ -740,7 +776,11 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
                    || (rs_ty_name.starts_with('&') && ISL_TYPES_RS.contains(&rs_ty_name[1..]))
                    || rs_ty_name == "bool")
             {
-                impl_fn.line("let context_for_error_message = self.get_ctx();");
+                if dst_t == "Context" {
+                    impl_fn.line("let context_for_error_message = &self;");
+                } else {
+                    impl_fn.line("let context_for_error_message = self.get_ctx();");
+                }
                 true
             } else {
                 false
@@ -814,14 +854,14 @@ fn implement_bindings(dst_t: &str, src_t: &str, dst_file: &str, src_files: &[&st
               ).unwrap_or_else(|_| panic!("error writing to {} file.", dst_file));
 }
 
-/// Generate rust code to define the `isl_dim_type` enum declation in rust and
+/// Generate rust code to define an enum declation in rust and
 /// writes the generated to the `dst_file` path. (Touches the file if not
 /// already present)
 ///
 /// # Warnings
 ///  
 /// - Overwrites the contents of `dst_file`.
-fn define_dim_type_enum(dst_file: &str, src_file: &str) {
+fn define_enum(c_type: &str, prefix: &str, dst_file: &str, src_file: &str) {
     let clang = clang::Clang::new().unwrap();
     let index = clang::Index::new(&clang, false, true);
     let t_unit = index.parser(src_file)
@@ -830,79 +870,89 @@ fn define_dim_type_enum(dst_file: &str, src_file: &str) {
                       .parse()
                       .unwrap();
 
-    let isl_dim_type_decl = t_unit.get_entity()
-                                  .get_children()
-                                  .into_iter()
-                                  .find(|e| {
-                                      e.get_kind() == clang::EntityKind::EnumDecl
-                                      && e.get_display_name().is_some()
-                                      && e.get_display_name().unwrap() == "isl_dim_type"
-                                  })
-                                  .unwrap();
+    let c_enum_decl = t_unit.get_entity()
+                            .get_children()
+                            .into_iter()
+                            .find(|e| {
+                                e.get_kind() == clang::EntityKind::EnumDecl
+                                && e.get_display_name().is_some()
+                                && e.get_display_name().unwrap() == c_type
+                            })
+                            .unwrap();
 
     // KK: Assertion to guard assumption
-    assert!(isl_dim_type_decl.get_children()
-                             .into_iter()
-                             .all(|x| x.get_kind() == clang::EntityKind::EnumConstantDecl));
+    assert!(c_enum_decl.get_children()
+                       .into_iter()
+                       .all(|x| x.get_kind() == clang::EntityKind::EnumConstantDecl));
 
-    let c_variant_names = isl_dim_type_decl.get_children()
-                                           .into_iter()
-                                           .filter(|x| x.get_children().is_empty())
-                                           .map(|x| x.get_display_name().unwrap())
-                                           .collect::<Vec<_>>();
+    let mut c_variant_names = vec![];
+    let mut c_synonyms = vec![];
 
-    let c_synonyms =
-        isl_dim_type_decl.get_children()
-                         .into_iter()
-                         .filter_map(|x| {
-                             Some((x.get_display_name().unwrap(),
-                                   x.get_children().pop()?.get_display_name().unwrap()))
-                         })
-                         .collect::<Vec<_>>();
-
-    // KK: Assertion to guard assumption
-    assert!(c_variant_names.iter().all(|x| x.starts_with("isl_dim_")));
-
-    let mut scope = Scope::new();
-    let dim_type_enum = scope.new_enum(C_TO_RS_BINDING["enum isl_dim_type"])
-                             .vis("pub")
-                             .repr("C")
-                             .derive("Clone")
-                             .derive("Copy")
-                             .derive("Debug");
-    for c_variant_name in c_variant_names {
-        let name_in_rust = c_variant_name[8..].to_string(); // 8 = len("isl_dim_")
-                                                            // convert variant name to camel case
-        let name_in_rust = format!("{}{}",
-                                   &name_in_rust[..1].to_uppercase(),
-                                   &name_in_rust[1..]);
-        dim_type_enum.new_variant(guard_identifier(name_in_rust));
+    for variant in c_enum_decl.get_children() {
+        let name = variant.get_display_name().unwrap();
+        if let Some(synonym) = variant.get_children()
+                                      .pop()
+                                      .and_then(|x| x.get_display_name())
+        {
+            c_synonyms.push((name, synonym));
+        } else {
+            let value = variant.get_children().pop().and_then(|x| x.evaluate());
+            c_variant_names.push((name, value));
+        }
     }
 
-    let dim_type_impl = scope.new_impl(C_TO_RS_BINDING["enum isl_dim_type"]);
-    for (c_synonym_name, c_synonym_value) in c_synonyms {
-        let name_in_rust = c_synonym_name[8..].to_string(); // 8 = len("isl_dim_")
-                                                            // convert variant name to camel case
+    // KK: Assertion to guard assumption
+    assert!(c_variant_names.iter().all(|(x, _)| x.starts_with(prefix)));
+
+    let rs_type = C_TO_RS_BINDING[format!("enum {}", c_type).as_str()];
+
+    let mut scope = Scope::new();
+    let rs_enum_decl = scope.new_enum(rs_type)
+                            .vis("pub")
+                            .repr("C")
+                            .derive("Clone")
+                            .derive("Copy")
+                            .derive("Debug");
+    for (c_variant_name, c_variant_value) in c_variant_names {
+        let name_in_rust = c_variant_name[prefix.len()..].to_string();
+        // convert variant name to camel case
         let name_in_rust = format!("{}{}",
                                    &name_in_rust[..1].to_uppercase(),
                                    &name_in_rust[1..]);
-        let value_in_rust = c_synonym_value[8..].to_string(); // 8 = len("isl_dim_")
-                                                              // convert variant name to camel case
+        let name_in_rust = match c_variant_value {
+            Some(clang::EvaluationResult::SignedInteger(x)) => {
+                format!("{name_in_rust} = {x}")
+            }
+            Some(clang::EvaluationResult::UnsignedInteger(x)) => {
+                format!("{name_in_rust} = {x}")
+            }
+            Some(_) | None => name_in_rust,
+        };
+        rs_enum_decl.new_variant(guard_identifier(name_in_rust));
+    }
+
+    let rs_enum_impl = scope.new_impl(rs_type);
+    for (c_synonym_name, c_synonym_value) in c_synonyms {
+        let name_in_rust = c_synonym_name[prefix.len()..].to_string();
+        // convert variant name to camel case
+        let name_in_rust = format!("{}{}",
+                                   &name_in_rust[..1].to_uppercase(),
+                                   &name_in_rust[1..]);
+        let value_in_rust = c_synonym_value[prefix.len()..].to_string();
+        // convert variant name to camel case
         let value_in_rust = format!("{}{}",
                                     &value_in_rust[..1].to_uppercase(),
                                     &value_in_rust[1..]);
-        dim_type_impl.associate_const(guard_identifier(name_in_rust),
-                                      C_TO_RS_BINDING["enum isl_dim_type"],
-                                      C_TO_RS_BINDING["enum isl_dim_type"].to_string()
-                                      + "::"
-                                      + &guard_identifier(value_in_rust),
-                                      "pub");
+        rs_enum_impl.associate_const(guard_identifier(name_in_rust),
+                                     rs_type,
+                                     format!("{rs_type}::{}", &guard_identifier(value_in_rust)),
+                                     "pub");
     }
 
     // Write the generated code
     fs::write(dst_file,
               format!("// Automatically generated by isl_bindings_generator.\n// LICENSE: MIT\n{}", scope.to_string())
-              ).expect("error writing to dim_type file");
+              ).expect("error writing to enum file");
 }
 
 /// Populates `src/bindings/mod.rs` with isl types.
@@ -910,6 +960,9 @@ fn generate_bindings_mod(dst_file: &str) {
     let mut scope = Scope::new();
 
     scope.raw("mod dim_type;");
+    scope.raw("mod error;");
+    scope.raw("mod fold;");
+    scope.raw("mod stat;");
     scope.raw("mod fixed_box;");
     scope.raw("mod stride_info;");
     scope.raw("mod context;");
@@ -917,10 +970,10 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("mod local_space;");
     scope.raw("mod id;");
     scope.raw("mod id_list;");
-    // scope.raw("mod multi_id;");
+    scope.raw("mod multi_id;");
     scope.raw("mod val;");
     scope.raw("mod val_list;");
-    // scope.raw("mod multi_val;");
+    scope.raw("mod multi_val;");
     scope.raw("mod point;");
     scope.raw("mod mat;");
     scope.raw("mod vec;");
@@ -932,15 +985,41 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("mod bmap_list;");
     scope.raw("mod map;");
     scope.raw("mod map_list;");
+    scope.raw("mod union_set;");
+    scope.raw("mod union_set_list;");
+    scope.raw("mod union_map;");
+    scope.raw("mod union_map_list;");
     scope.raw("mod constraint;");
     scope.raw("mod constraint_list;");
     scope.raw("mod aff;");
     scope.raw("mod aff_list;");
+    scope.raw("mod term;");
+    scope.raw("mod qpolynomial;");
+    scope.raw("mod qpolynomial_list;");
+    scope.raw("mod qpolynomial_fold;");
+    scope.raw("mod multi_aff;");
+    scope.raw("mod multi_pw_aff;");
+    scope.raw("mod multi_union_pw_aff;");
     scope.raw("mod pw_aff;");
     scope.raw("mod pw_aff_list;");
+    scope.raw("mod pw_multi_aff;");
+    scope.raw("mod pw_multi_aff_list;");
+    scope.raw("mod pw_qpolynomial;");
+    scope.raw("mod pw_qpolynomial_list;");
+    scope.raw("mod pw_qpolynomial_fold;");
+    scope.raw("mod pw_qpolynomial_fold_list;");
+    scope.raw("mod union_pw_aff;");
+    scope.raw("mod union_pw_aff_list;");
+    scope.raw("mod union_pw_multi_aff;");
+    scope.raw("mod union_pw_multi_aff_list;");
+    scope.raw("mod union_pw_qpolynomial;");
+    scope.raw("mod union_pw_qpolynomial_fold;");
     scope.raw("mod printer;");
 
     scope.raw("pub use dim_type::DimType;");
+    scope.raw("pub use error::Error;");
+    scope.raw("pub use fold::Fold;");
+    scope.raw("pub use stat::Stat;");
     scope.raw("pub use fixed_box::FixedBox;");
     scope.raw("pub use stride_info::StrideInfo;");
 
@@ -949,10 +1028,10 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("pub use local_space::LocalSpace;");
     scope.raw("pub use id::Id;");
     scope.raw("pub use id_list::IdList;");
-    // scope.raw("pub use multi_id::MultiId;");
+    scope.raw("pub use multi_id::MultiId;");
     scope.raw("pub use val::Val;");
     scope.raw("pub use val_list::ValList;");
-    // scope.raw("pub use multi_val::MultiVal;");
+    scope.raw("pub use multi_val::MultiVal;");
     scope.raw("pub use point::Point;");
     scope.raw("pub use mat::Mat;");
     scope.raw("pub use vec::Vec;");
@@ -964,16 +1043,39 @@ fn generate_bindings_mod(dst_file: &str) {
     scope.raw("pub use bmap_list::BasicMapList;");
     scope.raw("pub use map::Map;");
     scope.raw("pub use map_list::MapList;");
+    scope.raw("pub use union_set::UnionSet;");
+    scope.raw("pub use union_set_list::UnionSetList;");
+    scope.raw("pub use union_map::UnionMap;");
+    scope.raw("pub use union_map_list::UnionMapList;");
     scope.raw("pub use constraint::Constraint;");
     scope.raw("pub use constraint_list::ConstraintList;");
     scope.raw("pub use aff::Aff;");
     scope.raw("pub use aff_list::AffList;");
+    scope.raw("pub use term::Term;");
+    scope.raw("pub use qpolynomial::QPolynomial;");
+    scope.raw("pub use qpolynomial_list::QPolynomialList;");
+    scope.raw("pub use qpolynomial_fold::QPolynomialFold;");
+    scope.raw("pub use multi_aff::MultiAff;");
+    scope.raw("pub use multi_pw_aff::MultiPwAff;");
+    scope.raw("pub use multi_union_pw_aff::MultiUnionPwAff;");
     scope.raw("pub use pw_aff::PwAff;");
     scope.raw("pub use pw_aff_list::PwAffList;");
+    scope.raw("pub use pw_multi_aff::PwMultiAff;");
+    scope.raw("pub use pw_multi_aff_list::PwMultiAffList;");
+    scope.raw("pub use pw_qpolynomial::PwQPolynomial;");
+    scope.raw("pub use pw_qpolynomial_list::PwQPolynomialList;");
+    scope.raw("pub use pw_qpolynomial_fold::PwQPolynomialFold;");
+    scope.raw("pub use pw_qpolynomial_fold_list::PwQPolynomialFoldList;");
+    scope.raw("pub use union_pw_aff::UnionPwAff;");
+    scope.raw("pub use union_pw_aff_list::UnionPwAffList;");
+    scope.raw("pub use union_pw_multi_aff::UnionPwMultiAff;");
+    scope.raw("pub use union_pw_multi_aff_list::UnionPwMultiAffList;");
+    scope.raw("pub use union_pw_qpolynomial::UnionPwQPolynomial;");
+    scope.raw("pub use union_pw_qpolynomial_fold::UnionPwQPolynomialFold;");
     scope.raw("pub use printer::Printer;");
 
     // Write the generated code
-    fs::write(dst_file, scope.to_string()).expect("error writing to dim_type file");
+    fs::write(dst_file, scope.to_string()).expect("error writing to lib file");
 }
 
 fn main() {
@@ -983,7 +1085,25 @@ fn main() {
 
     fs::create_dir("src/bindings/").unwrap();
 
-    define_dim_type_enum("src/bindings/dim_type.rs", "isl/include/isl/space_type.h");
+    define_enum("isl_dim_type",
+                "isl_dim_",
+                "src/bindings/dim_type.rs",
+                "isl/include/isl/space_type.h");
+
+    define_enum("isl_error",
+                "isl_error_",
+                "src/bindings/error.rs",
+                "isl/include/isl/ctx.h");
+
+    define_enum("isl_fold",
+                "isl_fold_",
+                "src/bindings/fold.rs",
+                "isl/include/isl/polynomial_type.h");
+
+    define_enum("isl_stat",
+                "isl_stat_",
+                "src/bindings/stat.rs",
+                "isl/include/isl/ctx.h");
 
     // {{{ emit bindings for primitive types
 
@@ -1007,6 +1127,10 @@ fn main() {
                        "isl_id_list",
                        "src/bindings/id_list.rs",
                        &["isl/include/isl/id.h"]);
+    implement_bindings("MultiId",
+                       "isl_multi_id",
+                       "src/bindings/multi_id.rs",
+                       &["isl/include/isl/id.h"]);
     implement_bindings("Val",
                        "isl_val",
                        "src/bindings/val.rs",
@@ -1014,6 +1138,10 @@ fn main() {
     implement_bindings("ValList",
                        "isl_val_list",
                        "src/bindings/val_list.rs",
+                       &["isl/include/isl/val.h"]);
+    implement_bindings("MultiVal",
+                       "isl_multi_val",
+                       "src/bindings/multi_val.rs",
                        &["isl/include/isl/val.h"]);
     implement_bindings("Point",
                        "isl_point",
@@ -1059,6 +1187,26 @@ fn main() {
                        "isl_map_list",
                        "src/bindings/map_list.rs",
                        &["isl/include/isl/map_type.h", "isl/include/isl/map.h"]);
+    implement_bindings("UnionSet",
+                       "isl_union_set",
+                       "src/bindings/union_set.rs",
+                       &["isl/include/isl/union_set_type.h",
+                         "isl/include/isl/union_set.h"]);
+    implement_bindings("UnionSetList",
+                       "isl_union_set_list",
+                       "src/bindings/union_set_list.rs",
+                       &["isl/include/isl/union_set_type.h",
+                         "isl/include/isl/union_set.h"]);
+    implement_bindings("UnionMap",
+                       "isl_union_map",
+                       "src/bindings/union_map.rs",
+                       &["isl/include/isl/union_map_type.h",
+                         "isl/include/isl/union_map.h"]);
+    implement_bindings("UnionMapList",
+                       "isl_union_map_list",
+                       "src/bindings/union_map_list.rs",
+                       &["isl/include/isl/union_map_type.h",
+                         "isl/include/isl/union_map.h"]);
     implement_bindings("Constraint",
                        "isl_constraint",
                        "src/bindings/constraint.rs",
@@ -1075,6 +1223,34 @@ fn main() {
                        "isl_aff_list",
                        "src/bindings/aff_list.rs",
                        &["isl/include/isl/aff.h"]);
+    implement_bindings("Term",
+                       "isl_term",
+                       "src/bindings/term.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("QPolynomial",
+                       "isl_qpolynomial",
+                       "src/bindings/qpolynomial.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("QPolynomialList",
+                       "isl_qpolynomial_list",
+                       "src/bindings/qpolynomial_list.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("QPolynomialFold",
+                       "isl_qpolynomial_fold",
+                       "src/bindings/qpolynomial_fold.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("MultiAff",
+                       "isl_multi_aff",
+                       "src/bindings/multi_aff.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("MultiPwAff",
+                       "isl_multi_pw_aff",
+                       "src/bindings/multi_pw_aff.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("MultiUnionPwAff",
+                       "isl_multi_union_pw_aff",
+                       "src/bindings/multi_union_pw_aff.rs",
+                       &["isl/include/isl/aff.h"]);
     implement_bindings("PwAff",
                        "isl_pw_aff",
                        "src/bindings/pw_aff.rs",
@@ -1083,6 +1259,54 @@ fn main() {
                        "isl_pw_aff_list",
                        "src/bindings/pw_aff_list.rs",
                        &["isl/include/isl/aff.h"]);
+    implement_bindings("PwMultiAff",
+                       "isl_pw_multi_aff",
+                       "src/bindings/pw_multi_aff.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("PwMultiAffList",
+                       "isl_pw_multi_aff_list",
+                       "src/bindings/pw_multi_aff_list.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("PwQPolynomial",
+                       "isl_pw_qpolynomial",
+                       "src/bindings/pw_qpolynomial.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("PwQPolynomialList",
+                       "isl_pw_qpolynomial_list",
+                       "src/bindings/pw_qpolynomial_list.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("PwQPolynomialFold",
+                       "isl_pw_qpolynomial_fold",
+                       "src/bindings/pw_qpolynomial_fold.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("PwQPolynomialFoldList",
+                       "isl_pw_qpolynomial_fold_list",
+                       "src/bindings/pw_qpolynomial_fold_list.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("UnionPwAff",
+                       "isl_union_pw_aff",
+                       "src/bindings/union_pw_aff.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("UnionPwAffList",
+                       "isl_union_pw_aff_list",
+                       "src/bindings/union_pw_aff_list.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("UnionPwMultiAff",
+                       "isl_union_pw_multi_aff",
+                       "src/bindings/union_pw_multi_aff.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("UnionPwMultiAffList",
+                       "isl_union_pw_multi_aff_list",
+                       "src/bindings/union_pw_multi_aff_list.rs",
+                       &["isl/include/isl/aff.h"]);
+    implement_bindings("UnionPwQPolynomial",
+                       "isl_union_pw_qpolynomial",
+                       "src/bindings/union_pw_qpolynomial.rs",
+                       &["isl/include/isl/polynomial.h"]);
+    implement_bindings("UnionPwQPolynomialFold",
+                       "isl_union_pw_qpolynomial_fold",
+                       "src/bindings/union_pw_qpolynomial_fold.rs",
+                       &["isl/include/isl/polynomial.h"]);
     implement_bindings("StrideInfo",
                        "isl_stride_info",
                        "src/bindings/stride_info.rs",
@@ -1098,8 +1322,8 @@ fn main() {
                          "isl/include/isl/val.h",
                          "isl/include/isl/set.h",
                          "isl/include/isl/map.h",
-                         //"isl/include/isl/union_set.h",
-                         //"isl/include/isl/union_map.h",
+                         "isl/include/isl/union_set.h",
+                         "isl/include/isl/union_map.h",
                          "isl/include/isl/id.h",
                          "isl/include/isl/aff.h",
                          "isl/include/isl/polynomial.h"]);
