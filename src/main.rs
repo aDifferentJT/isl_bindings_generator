@@ -148,6 +148,24 @@ enum RustType {
     },
 }
 
+impl RustType {
+    fn add_generic(&self, func: &mut codegen::Function) {
+        if let RustType::Closure { name,
+                                   rust_args,
+                                   rust_ret,
+                                   .. } = self
+        {
+            func.generic(name);
+            func.bound(name,
+                       format!("FnMut({}){}",
+                               rust_args.iter().format(", "),
+                               rust_ret.as_ref()
+                                       .map(|ret| format!(" -> {}", ret))
+                                       .unwrap_or_default()));
+        }
+    }
+}
+
 impl std::fmt::Display for RustType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -548,7 +566,6 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Rust
         RustType::UIntPtr
         | RustType::I32
         | RustType::U32
-        | RustType::Bool
         | RustType::U64
         | RustType::I64
         | RustType::F64
@@ -559,6 +576,9 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Rust
         | RustType::Stat
         | RustType::Ptr(_, box RustType::CVoid)
         | RustType::FnPointer { .. } => {}
+        RustType::Bool => {
+            func.line(format!("let {var_name} = if {var_name} {{ 1 }} else {{ 0 }};"));
+        }
         RustType::Ref(box RustType::Str) => {
             func.line(format!("let {} = CString::new({}).unwrap();", var_name, var_name));
             func.line(format!("let {} = {}.as_ptr();", var_name, var_name));
@@ -578,7 +598,8 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Rust
                             extern_ret, } => {
             let mut wrapper_func = codegen::Function::new(format!("{var_name}_wrapper"));
             wrapper_func.extern_abi("C");
-            wrapper_func.generic(name);
+
+            rs_ty_name.add_generic(&mut wrapper_func);
 
             for (i, arg) in extern_args.iter().enumerate() {
                 wrapper_func.arg(&format!("arg_{i}"), &arg.to_string());
@@ -587,9 +608,23 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Rust
                 wrapper_func.ret(&ret.to_string());
             }
 
+            for (i, arg) in rust_args.iter().cloned().enumerate() {
+                postprocess_var_from_extern_func(&mut wrapper_func,
+                                                 Some(arg),
+                                                 format!("arg_{i}"),
+                                                 false);
+            }
+
             wrapper_func.line(format!("let {var_name}: *mut {name} = unsafe {{ core::mem::transmute(arg_{}) }};", rust_args.len()));
             wrapper_func.line(format!("let {var_name}: &mut {name} = unsafe {{ &mut *{var_name} }};"));
-            wrapper_func.line("todo!()");
+            wrapper_func.line(format!("let res = {var_name}({});",
+                                      (0..rust_args.len()).map(|i| format!("arg_{i}"))
+                                                          .format(", ")));
+
+            if let Some(rust_ret) = rust_ret {
+                preprocess_var_to_extern_func(&mut wrapper_func, rust_ret, "res");
+                wrapper_func.line("res");
+            }
 
             let mut wrapper_func_str = String::new();
             wrapper_func.fmt(false, &mut codegen::Formatter::new(&mut wrapper_func_str));
@@ -601,6 +636,7 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Rust
                 format!("{var_name}_user")
             };
 
+            func.line(format!("let mut {var_name} = {var_name};"));
             func.line(format!("let {user_name}: *mut {name} = &mut {var_name};"));
             func.line(format!("let {user_name}: *mut c_void = unsafe {{ core::mem::transmute({user_name}) }};"));
             func.line(format!("let {var_name} = {var_name}_wrapper::<{name}>;"));
@@ -1026,24 +1062,9 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
 
         // add the rest of the arguments
         for (arg_name, arg_t) in zip(bnd_arg_names.iter(), bnd_arg_types.iter()) {
-            if let RustType::Closure { name,
-                                       rust_args,
-                                       rust_ret,
-                                       .. } = arg_t
-            {
-                impl_fn.generic(name);
-                impl_fn.bound(name,
-                              format!("FnMut({}){}",
-                                      rust_args.iter().format(", "),
-                                      rust_ret.as_ref()
-                                              .map(|ret| format!(" -> {}", ret))
-                                              .unwrap_or_default()));
-                impl_fn.arg(&format!("mut {arg_name}"), arg_t.to_string());
-                arg_names_in_fn_body.push(arg_name.clone());
-            } else {
-                impl_fn = impl_fn.arg(arg_name, arg_t.to_string());
-                arg_names_in_fn_body.push(arg_name.to_string());
-            }
+            arg_t.add_generic(impl_fn);
+            impl_fn.arg(arg_name, arg_t.to_string());
+            arg_names_in_fn_body.push(arg_name.clone());
         }
 
         // add the return type
