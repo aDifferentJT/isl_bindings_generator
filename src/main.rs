@@ -138,7 +138,14 @@ enum RustType {
         args: Vec<RustType>,
         ret: Option<Box<RustType>>,
     },
-    Raw(String),
+    IslType(&'static str),
+    Closure {
+        name: String,
+        rust_args: Vec<RustType>,
+        rust_ret: Option<Box<RustType>>,
+        extern_args: Vec<RustType>,
+        extern_ret: Option<Box<RustType>>,
+    },
 }
 
 impl std::fmt::Display for RustType {
@@ -165,75 +172,76 @@ impl std::fmt::Display for RustType {
             RustType::FnPointer { args, ret } => {
                 write!(f,
                        "unsafe extern \"C\" fn({}){}",
-                       args.iter().format(" "),
+                       args.iter().format(", "),
                        ret.as_ref()
                           .map(|ret| format!(" -> {ret}"))
                           .unwrap_or_default())
             }
-            RustType::Raw(x) => write!(f, "{x}"),
+            RustType::IslType(x) => write!(f, "{x}"),
+            RustType::Closure { name, .. } => write!(f, "{name}"),
         }
     }
 }
 
 lazy_static! {
     static ref C_TO_RS_BINDING: HashMap<&'static str, RustType> =
-        HashMap::from([("struct isl_ctx *", RustType::Raw("Context".to_owned())),
-                       ("struct isl_space *", RustType::Raw("Space".to_owned())),
-                       ("struct isl_local_space *", RustType::Raw("LocalSpace".to_owned())),
-                       ("struct isl_id *", RustType::Raw("Id".to_owned())),
-                       ("struct isl_id_list *", RustType::Raw("IdList".to_owned())),
-                       ("struct isl_val *", RustType::Raw("Val".to_owned())),
-                       ("struct isl_val_list *", RustType::Raw("ValList".to_owned())),
-                       ("struct isl_point *", RustType::Raw("Point".to_owned())),
-                       ("struct isl_mat *", RustType::Raw("Mat".to_owned())),
-                       ("struct isl_vec *", RustType::Raw("Vec".to_owned())),
-                       ("struct isl_basic_set *", RustType::Raw("BasicSet".to_owned())),
-                       ("struct isl_basic_set_list *", RustType::Raw("BasicSetList".to_owned())),
-                       ("struct isl_set *", RustType::Raw("Set".to_owned())),
-                       ("struct isl_set_list *", RustType::Raw("SetList".to_owned())),
-                       ("struct isl_basic_map *", RustType::Raw("BasicMap".to_owned())),
-                       ("struct isl_basic_map_list *", RustType::Raw("BasicMapList".to_owned())),
-                       ("struct isl_map *", RustType::Raw("Map".to_owned())),
-                       ("struct isl_map_list *", RustType::Raw("MapList".to_owned())),
-                       ("struct isl_union_set *", RustType::Raw("UnionSet".to_owned())),
-                       ("struct isl_union_set_list *", RustType::Raw("UnionSetList".to_owned())),
-                       ("struct isl_union_map *", RustType::Raw("UnionMap".to_owned())),
-                       ("struct isl_union_map_list *", RustType::Raw("UnionMapList".to_owned())),
-                       ("struct isl_constraint *", RustType::Raw("Constraint".to_owned())),
-                       ("struct isl_constraint_list *", RustType::Raw("ConstraintList".to_owned())),
-                       ("struct isl_aff *", RustType::Raw("Aff".to_owned())),
-                       ("struct isl_aff_list *", RustType::Raw("AffList".to_owned())),
-                       ("struct isl_term *", RustType::Raw("Term".to_owned())),
-                       ("struct isl_qpolynomial *", RustType::Raw("QPolynomial".to_owned())),
-                       ("struct isl_qpolynomial_list *", RustType::Raw("QPolynomialList".to_owned())),
-                       ("struct isl_qpolynomial_fold *", RustType::Raw("QPolynomialFold".to_owned())),
-                       ("struct isl_multi_id *", RustType::Raw("MultiId".to_owned())),
-                       ("struct isl_multi_val *", RustType::Raw("MultiVal".to_owned())),
-                       ("struct isl_multi_aff *", RustType::Raw("MultiAff".to_owned())),
-                       ("struct isl_multi_pw_aff *", RustType::Raw("MultiPwAff".to_owned())),
-                       ("struct isl_multi_union_pw_aff *", RustType::Raw("MultiUnionPwAff".to_owned())),
-                       ("struct isl_pw_aff *", RustType::Raw("PwAff".to_owned())),
-                       ("struct isl_pw_aff_list *", RustType::Raw("PwAffList".to_owned())),
-                       ("struct isl_pw_multi_aff *", RustType::Raw("PwMultiAff".to_owned())),
-                       ("struct isl_pw_multi_aff_list *", RustType::Raw("PwMultiAffList".to_owned())),
-                       ("struct isl_pw_qpolynomial *", RustType::Raw("PwQPolynomial".to_owned())),
-                       ("struct isl_pw_qpolynomial_list *", RustType::Raw("PwQPolynomialList".to_owned())),
-                       ("struct isl_pw_qpolynomial_fold *", RustType::Raw("PwQPolynomialFold".to_owned())),
-                       ("struct isl_pw_qpolynomial_fold_list *", RustType::Raw("PwQPolynomialFoldList".to_owned())),
-                       ("struct isl_union_pw_aff *", RustType::Raw("UnionPwAff".to_owned())),
-                       ("struct isl_union_pw_aff_list *", RustType::Raw("UnionPwAffList".to_owned())),
-                       ("struct isl_union_pw_multi_aff *", RustType::Raw("UnionPwMultiAff".to_owned())),
-                       ("struct isl_union_pw_multi_aff_list *", RustType::Raw("UnionPwMultiAffList".to_owned())),
-                       ("struct isl_union_pw_qpolynomial *", RustType::Raw("UnionPwQPolynomial".to_owned())),
-                       ("struct isl_union_pw_qpolynomial_fold *", RustType::Raw("UnionPwQPolynomialFold".to_owned())),
-                       ("struct isl_stride_info *", RustType::Raw("StrideInfo".to_owned())),
-                       ("struct isl_fixed_box *", RustType::Raw("FixedBox".to_owned())),
+        HashMap::from([("struct isl_ctx *", RustType::IslType("Context")),
+                       ("struct isl_space *", RustType::IslType("Space")),
+                       ("struct isl_local_space *", RustType::IslType("LocalSpace")),
+                       ("struct isl_id *", RustType::IslType("Id")),
+                       ("struct isl_id_list *", RustType::IslType("IdList")),
+                       ("struct isl_val *", RustType::IslType("Val")),
+                       ("struct isl_val_list *", RustType::IslType("ValList")),
+                       ("struct isl_point *", RustType::IslType("Point")),
+                       ("struct isl_mat *", RustType::IslType("Mat")),
+                       ("struct isl_vec *", RustType::IslType("Vec")),
+                       ("struct isl_basic_set *", RustType::IslType("BasicSet")),
+                       ("struct isl_basic_set_list *", RustType::IslType("BasicSetList")),
+                       ("struct isl_set *", RustType::IslType("Set")),
+                       ("struct isl_set_list *", RustType::IslType("SetList")),
+                       ("struct isl_basic_map *", RustType::IslType("BasicMap")),
+                       ("struct isl_basic_map_list *", RustType::IslType("BasicMapList")),
+                       ("struct isl_map *", RustType::IslType("Map")),
+                       ("struct isl_map_list *", RustType::IslType("MapList")),
+                       ("struct isl_union_set *", RustType::IslType("UnionSet")),
+                       ("struct isl_union_set_list *", RustType::IslType("UnionSetList")),
+                       ("struct isl_union_map *", RustType::IslType("UnionMap")),
+                       ("struct isl_union_map_list *", RustType::IslType("UnionMapList")),
+                       ("struct isl_constraint *", RustType::IslType("Constraint")),
+                       ("struct isl_constraint_list *", RustType::IslType("ConstraintList")),
+                       ("struct isl_aff *", RustType::IslType("Aff")),
+                       ("struct isl_aff_list *", RustType::IslType("AffList")),
+                       ("struct isl_term *", RustType::IslType("Term")),
+                       ("struct isl_qpolynomial *", RustType::IslType("QPolynomial")),
+                       ("struct isl_qpolynomial_list *", RustType::IslType("QPolynomialList")),
+                       ("struct isl_qpolynomial_fold *", RustType::IslType("QPolynomialFold")),
+                       ("struct isl_multi_id *", RustType::IslType("MultiId")),
+                       ("struct isl_multi_val *", RustType::IslType("MultiVal")),
+                       ("struct isl_multi_aff *", RustType::IslType("MultiAff")),
+                       ("struct isl_multi_pw_aff *", RustType::IslType("MultiPwAff")),
+                       ("struct isl_multi_union_pw_aff *", RustType::IslType("MultiUnionPwAff")),
+                       ("struct isl_pw_aff *", RustType::IslType("PwAff")),
+                       ("struct isl_pw_aff_list *", RustType::IslType("PwAffList")),
+                       ("struct isl_pw_multi_aff *", RustType::IslType("PwMultiAff")),
+                       ("struct isl_pw_multi_aff_list *", RustType::IslType("PwMultiAffList")),
+                       ("struct isl_pw_qpolynomial *", RustType::IslType("PwQPolynomial")),
+                       ("struct isl_pw_qpolynomial_list *", RustType::IslType("PwQPolynomialList")),
+                       ("struct isl_pw_qpolynomial_fold *", RustType::IslType("PwQPolynomialFold")),
+                       ("struct isl_pw_qpolynomial_fold_list *", RustType::IslType("PwQPolynomialFoldList")),
+                       ("struct isl_union_pw_aff *", RustType::IslType("UnionPwAff")),
+                       ("struct isl_union_pw_aff_list *", RustType::IslType("UnionPwAffList")),
+                       ("struct isl_union_pw_multi_aff *", RustType::IslType("UnionPwMultiAff")),
+                       ("struct isl_union_pw_multi_aff_list *", RustType::IslType("UnionPwMultiAffList")),
+                       ("struct isl_union_pw_qpolynomial *", RustType::IslType("UnionPwQPolynomial")),
+                       ("struct isl_union_pw_qpolynomial_fold *", RustType::IslType("UnionPwQPolynomialFold")),
+                       ("struct isl_stride_info *", RustType::IslType("StrideInfo")),
+                       ("struct isl_fixed_box *", RustType::IslType("FixedBox")),
                        ("enum isl_dim_type", RustType::DimType),
                        ("enum isl_error", RustType::Error),
                        ("enum isl_fold", RustType::Fold),
                        ("enum isl_stat", RustType::Stat),
                        ("struct isl_stat", RustType::Stat),
-                       ("struct isl_printer *", RustType::Raw("Printer".to_owned()))]);
+                       ("struct isl_printer *", RustType::IslType("Printer"))]);
     static ref ISL_CORE_TYPES: HashSet<&'static str> = HashSet::from(["struct isl_ctx *",
                                                                       "struct isl_space *",
                                                                       "struct isl_local_space *",
@@ -290,7 +298,8 @@ lazy_static! {
     static ref ISL_TYPES_RS: HashSet<RustType> =
         HashSet::from_iter(C_TO_RS_BINDING.clone().into_values());
     static ref KEYWORD_TO_IDEN: HashMap<&'static str, &'static str> =
-        HashMap::from([("in", "in_"),
+        HashMap::from([("fn", "fn_"),
+                       ("in", "in_"),
                        ("str", "str_"),
                        ("type", "type_"),
                        ("box", "box_"),
@@ -301,7 +310,8 @@ lazy_static! {
 
     // TODO: Once we reduce this set down to 0, we are done!
     static ref UNSUPPORTED_C_TYPES: HashSet<&'static str> =
-        HashSet::from(["struct __sFILE *", "const struct __sFILE *",
+        HashSet::from(["struct __sFILE *",
+                       "const struct __sFILE *",
                        "int *",
                        "const int *",
                        "isl_bool *",
@@ -352,9 +362,10 @@ fn is_isl_type(c_arg_t: &str) -> bool {
 
 /// Returns `true` only if `c_arg_t` is a type not supported by
 /// [`isl_bindings_generator`].
-fn is_type_not_supported(c_arg_t: &CType) -> bool {
+fn is_type_not_supported(c_arg_t: &CType, ret: bool) -> bool {
     // TODO this dismisses all callbacks and out pointers
     match c_arg_t {
+        CType::FnPointer { .. } if ret => true,
         CType::Raw(c_arg_t) => {
             UNSUPPORTED_C_TYPES.contains(c_arg_t.as_str()) || c_arg_t.contains("**")
         }
@@ -403,7 +414,8 @@ fn to_extern_arg_t(c_arg_t: &CType) -> RustType {
 }
 
 /// Returns the name for `c_arg_t` to use in the rust-binding function.
-fn to_rust_arg_t(c_arg_t: CType, ownership: Option<ISLOwnership>) -> RustType {
+fn to_rust_arg_t(c_arg_t: CType, ownership: Option<ISLOwnership>, name: Option<&String>)
+                 -> RustType {
     match c_arg_t {
         CType::IslDimType => C_TO_RS_BINDING["enum isl_dim_type"].clone(),
         CType::IslError => C_TO_RS_BINDING["enum isl_error"].clone(),
@@ -437,10 +449,25 @@ fn to_rust_arg_t(c_arg_t: CType, ownership: Option<ISLOwnership>) -> RustType {
         CType::MutVoidStar => RustType::Ptr(Mut, Box::new(RustType::CVoid)),
         CType::ConstVoidStar => RustType::Ptr(Const, Box::new(RustType::CVoid)),
         CType::FnPointer { args, ret } => {
-            RustType::FnPointer { args: args.into_iter()
-                                            .map(|arg| to_extern_arg_t(&arg))
-                                            .collect(),
-                                  ret: ret.map(|box ret| to_extern_arg_t(&ret)).map(Box::new) }
+            let arg_count = args.len();
+            RustType::Closure { name: name.unwrap().clone(),
+                                extern_args: args.iter()
+                                                 .map(|arg| to_extern_arg_t(arg))
+                                                 .collect(),
+                                extern_ret: ret.as_ref()
+                                               .map(|box ret| to_extern_arg_t(ret))
+                                               .map(Box::new),
+                                rust_args:
+                                    args.into_iter()
+                                        .take(arg_count - 1)
+                                        .map(|arg| {
+                                            to_rust_arg_t(arg, Some(ISLOwnership::Keep), None)
+                                        })
+                                        .collect(),
+                                rust_ret: ret.map(|box ret| {
+                                                 to_rust_arg_t(ret, Some(ISLOwnership::Keep), None)
+                                             })
+                                             .map(Box::new) }
         }
         CType::Raw(c_arg_t) => {
             panic!("Unexpected type: {}", c_arg_t)
@@ -449,8 +476,9 @@ fn to_rust_arg_t(c_arg_t: CType, ownership: Option<ISLOwnership>) -> RustType {
 }
 
 /// Imports `ty_name` from the correct path for `scope`.
-fn import_type(scope: &mut Scope, ty_name: &RustType) {
+fn import_type(scope: &mut Scope, ty_name: &RustType, dst_t: &RustType) {
     match ty_name {
+        x if x == dst_t => {}
         RustType::UIntPtr => {
             scope.import("libc", "uintptr_t");
         }
@@ -471,24 +499,42 @@ fn import_type(scope: &mut Scope, ty_name: &RustType) {
         RustType::CVoid => {
             scope.import("std::os::raw", "c_void");
         }
-        RustType::Ref(t) => import_type(scope, t),
-        RustType::Ptr(_, t) => import_type(scope, t),
+        RustType::Ref(t) => import_type(scope, t, dst_t),
+        RustType::Ptr(_, t) => import_type(scope, t, dst_t),
         x if ISL_TYPES_RS.contains(x) => {
             scope.import("crate::bindings", &x.to_string());
         }
         RustType::FnPointer { args, ret } => {
             for arg in args {
-                import_type(scope, arg);
+                import_type(scope, arg, dst_t);
             }
             if let Some(ret) = ret {
-                import_type(scope, ret);
+                import_type(scope, ret, dst_t);
+            }
+        }
+        RustType::Closure { name: _,
+                            rust_args,
+                            rust_ret,
+                            extern_args,
+                            extern_ret, } => {
+            for arg in rust_args {
+                import_type(scope, arg, dst_t);
+            }
+            if let Some(ret) = rust_ret {
+                import_type(scope, ret, dst_t);
+            }
+            for arg in extern_args {
+                import_type(scope, arg, dst_t);
+            }
+            if let Some(ret) = extern_ret {
+                import_type(scope, ret, dst_t);
             }
         }
         RustType::DimType
         | RustType::Error
         | RustType::Fold
         | RustType::Stat
-        | RustType::Raw(_) => panic!("Unknown type '{}'.", ty_name),
+        | RustType::IslType(_) => panic!("Unknown type '{}'.", ty_name),
     };
 }
 
@@ -525,12 +571,46 @@ fn preprocess_var_to_extern_func(func: &mut codegen::Function, rs_ty_name: &Rust
         RustType::Ref(box ref x) if ISL_TYPES_RS.contains(x) => {
             func.line(format!("let {} = {}.ptr;", var_name, var_name));
         }
+        RustType::Closure { name,
+                            rust_args,
+                            rust_ret,
+                            extern_args,
+                            extern_ret, } => {
+            let mut wrapper_func = codegen::Function::new(format!("{var_name}_wrapper"));
+            wrapper_func.extern_abi("C");
+            wrapper_func.generic(name);
+
+            for (i, arg) in extern_args.iter().enumerate() {
+                wrapper_func.arg(&format!("arg_{i}"), &arg.to_string());
+            }
+            if let Some(ret) = extern_ret {
+                wrapper_func.ret(&ret.to_string());
+            }
+
+            wrapper_func.line(format!("let {var_name}: *mut {name} = unsafe {{ core::mem::transmute(arg_{}) }};", rust_args.len()));
+            wrapper_func.line(format!("let {var_name}: &mut {name} = unsafe {{ &mut *{var_name} }};"));
+            wrapper_func.line("todo!()");
+
+            let mut wrapper_func_str = String::new();
+            wrapper_func.fmt(false, &mut codegen::Formatter::new(&mut wrapper_func_str));
+            func.line(wrapper_func_str);
+
+            let user_name = if var_name == "fn_" {
+                "user".to_owned()
+            } else {
+                format!("{var_name}_user")
+            };
+
+            func.line(format!("let {user_name}: *mut {name} = &mut {var_name};"));
+            func.line(format!("let {user_name}: *mut c_void = unsafe {{ core::mem::transmute({user_name}) }};"));
+            func.line(format!("let {var_name} = {var_name}_wrapper::<{name}>;"));
+        }
         RustType::CVoid
         | RustType::CChar
         | RustType::Str
         | RustType::Ref(_)
         | RustType::Ptr(_, _)
-        | RustType::Raw(_) => unimplemented!("{}", rs_ty_name),
+        | RustType::IslType(_) => unimplemented!("{}", rs_ty_name),
     };
 }
 
@@ -555,7 +635,8 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
                 | RustType::Fold
                 | RustType::Stat
                 | RustType::Ptr(_, box RustType::CVoid)
-                | RustType::FnPointer { .. } => {}
+                | RustType::FnPointer { .. }
+                | RustType::Closure { .. } => {}
                 RustType::Ref(box RustType::Str) => {
                     func.line(format!("let {} = unsafe {{ CStr::from_ptr({}) }};",
                                       var_name, var_name));
@@ -588,7 +669,7 @@ fn postprocess_var_from_extern_func(func: &mut codegen::Function, rs_ty_name: Op
                 | RustType::Str
                 | RustType::Ref(_)
                 | RustType::Ptr(_, _)
-                | RustType::Raw(_) => unimplemented!("{}", rs_ty_name),
+                | RustType::IslType(_) => unimplemented!("{}", rs_ty_name),
             };
         }
         None => {
@@ -663,9 +744,9 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, src_t: &CTy
                                 .map(|x| x)
                                 .map(CType::from);
 
-        if c_arg_types.iter().any(|x| is_type_not_supported(x))
+        if c_arg_types.iter().any(|x| is_type_not_supported(x, false))
            || ret_type.clone()
-                      .map_or(false, |x| is_type_not_supported(&x))
+                      .map_or(false, |x| is_type_not_supported(&x, true))
         {
             println!("SKIPPING {}", func_decl.get_name().unwrap());
             continue;
@@ -682,14 +763,20 @@ fn get_extern_and_bindings_functions(func_decls: Vec<clang::Entity>, src_t: &CTy
                        arg_types: c_arg_types.iter().map(to_extern_arg_t).collect(),
                        ret_type: ret_type.as_ref().map(to_extern_arg_t) };
 
-        let binding_func =
-            Function { name: get_rust_method_name(&func_decl, src_t),
-                       arg_names: c_arg_names,
-                       arg_types: zip(c_arg_types, borrowing_rules).map(|(x, brw)| {
-                                                                       to_rust_arg_t(x, brw)
-                                                                   })
-                                                                   .collect(),
-                       ret_type: ret_type.map(|x| to_rust_arg_t(x, Some(ISLOwnership::Take))) };
+        let binding_func = Function { name: get_rust_method_name(&func_decl, src_t),
+                                      arg_types: zip(c_arg_types, zip(borrowing_rules,
+                                                     &c_arg_names)).map(|(x, (brw, name))| {
+                                                                      to_rust_arg_t(x,
+                                                                                    brw,
+                                                                                    Some(name))
+                                                                  })
+                                                                  .collect(),
+                                      arg_names: c_arg_names,
+                                      ret_type: ret_type.map(|x| {
+                                                            to_rust_arg_t(x,
+                                                                          Some(ISLOwnership::Take),
+                                                                          None)
+                                                        }) };
 
         extern_and_bindings_functions.insert((extern_func, binding_func));
     }
@@ -739,18 +826,13 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
     // {{{ Generate `use ...` statements.
 
     // Always use uintptr_t as dst_t's struct requires it.
-    import_type(&mut scope, &RustType::UIntPtr);
+    import_type(&mut scope, &RustType::UIntPtr, dst_t);
     for func in extern_funcs.iter().chain(binding_funcs.iter()) {
-        match &func.ret_type {
-            Some(x) if x != dst_t && x != &RustType::Ref(Box::new(dst_t.clone())) => {
-                import_type(&mut scope, x)
-            }
-            _ => {}
-        };
+        if let Some(ret_t) = &func.ret_type {
+            import_type(&mut scope, ret_t, dst_t);
+        }
         for arg_t in func.arg_types.iter() {
-            if arg_t != dst_t && arg_t != &RustType::Ref(Box::new(dst_t.clone())) {
-                import_type(&mut scope, arg_t);
-            }
+            import_type(&mut scope, arg_t, dst_t);
         }
     }
 
@@ -846,7 +928,7 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
 
     // {{{ impl FromIterator for `dst_t`.
 
-    if let RustType::Raw(dst_t) = dst_t {
+    if let RustType::IslType(dst_t) = dst_t {
         if let Some(elem_t) = dst_t.strip_suffix("List") {
             let from_iterator_impl = scope.new_impl(dst_t);
             from_iterator_impl.impl_trait(format!("FromIterator<{}>", elem_t));
@@ -944,8 +1026,24 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
 
         // add the rest of the arguments
         for (arg_name, arg_t) in zip(bnd_arg_names.iter(), bnd_arg_types.iter()) {
-            impl_fn = impl_fn.arg(arg_name, arg_t.to_string());
-            arg_names_in_fn_body.push(arg_name.to_string());
+            if let RustType::Closure { name,
+                                       rust_args,
+                                       rust_ret,
+                                       .. } = arg_t
+            {
+                impl_fn.generic(name);
+                impl_fn.bound(name,
+                              format!("FnMut({}){}",
+                                      rust_args.iter().format(", "),
+                                      rust_ret.as_ref()
+                                              .map(|ret| format!(" -> {}", ret))
+                                              .unwrap_or_default()));
+                impl_fn.arg(&format!("mut {arg_name}"), arg_t.to_string());
+                arg_names_in_fn_body.push(arg_name.clone());
+            } else {
+                impl_fn = impl_fn.arg(arg_name, arg_t.to_string());
+                arg_names_in_fn_body.push(arg_name.to_string());
+            }
         }
 
         // add the return type
@@ -956,7 +1054,7 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
 
         // Store context in case we need it later for error handling
         let can_emit_error_message = if let Some(rs_ty_name) = &binding_func.ret_type {
-            if rs_ty_name != &RustType::Raw("Context".to_owned())
+            if rs_ty_name != &RustType::IslType("Context")
                && arg_names_in_fn_body.first()
                                       .is_some_and(|name| name == "self")
                && (ISL_TYPES_RS.contains(rs_ty_name)
@@ -967,7 +1065,7 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
                    })
                    || rs_ty_name == &RustType::Bool)
             {
-                if dst_t == &RustType::Raw("Context".to_owned()) {
+                if dst_t == &RustType::IslType("Context") {
                     impl_fn.line("let context_for_error_message = &self;");
                 } else {
                     impl_fn.line("let context_for_error_message = self.get_ctx();");
@@ -985,7 +1083,7 @@ fn implement_bindings(dst_t: &RustType, src_t: &CType, dst_file: &str, src_files
                                                                zip(binding_func.arg_names.iter(),
                                                                    arg_names_in_fn_body.iter()))
         {
-            if arg_name != arg_name_in_fn_body {
+            if arg_name != arg_name_in_fn_body && !matches!(arg_type, RustType::Closure { .. }) {
                 impl_fn.line(format!("let {} = {};", arg_name, arg_name_in_fn_body));
             }
 
@@ -1301,215 +1399,215 @@ fn main() {
 
     // {{{ emit bindings for primitive types
 
-    implement_bindings(&RustType::Raw("Context".to_owned()),
+    implement_bindings(&RustType::IslType("Context"),
                        &CType::IslType("isl_ctx".to_owned()),
                        "src/bindings/context.rs",
                        &["isl/include/isl/ctx.h"]);
-    implement_bindings(&RustType::Raw("Space".to_owned()),
+    implement_bindings(&RustType::IslType("Space"),
                        &CType::IslType("isl_space".to_owned()),
                        "src/bindings/space.rs",
                        &["isl/include/isl/space.h"]);
-    implement_bindings(&RustType::Raw("LocalSpace".to_owned()),
+    implement_bindings(&RustType::IslType("LocalSpace"),
                        &CType::IslType("isl_local_space".to_owned()),
                        "src/bindings/local_space.rs",
                        &["isl/include/isl/local_space.h"]);
-    implement_bindings(&RustType::Raw("Id".to_owned()),
+    implement_bindings(&RustType::IslType("Id"),
                        &CType::IslType("isl_id".to_owned()),
                        "src/bindings/id.rs",
                        &["isl/include/isl/id.h"]);
-    implement_bindings(&RustType::Raw("IdList".to_owned()),
+    implement_bindings(&RustType::IslType("IdList"),
                        &CType::IslType("isl_id_list".to_owned()),
                        "src/bindings/id_list.rs",
                        &["isl/include/isl/id.h"]);
-    implement_bindings(&RustType::Raw("MultiId".to_owned()),
+    implement_bindings(&RustType::IslType("MultiId"),
                        &CType::IslType("isl_multi_id".to_owned()),
                        "src/bindings/multi_id.rs",
                        &["isl/include/isl/id.h"]);
-    implement_bindings(&RustType::Raw("Val".to_owned()),
+    implement_bindings(&RustType::IslType("Val"),
                        &CType::IslType("isl_val".to_owned()),
                        "src/bindings/val.rs",
                        &["isl/include/isl/val.h"]);
-    implement_bindings(&RustType::Raw("ValList".to_owned()),
+    implement_bindings(&RustType::IslType("ValList"),
                        &CType::IslType("isl_val_list".to_owned()),
                        "src/bindings/val_list.rs",
                        &["isl/include/isl/val.h"]);
-    implement_bindings(&RustType::Raw("MultiVal".to_owned()),
+    implement_bindings(&RustType::IslType("MultiVal"),
                        &CType::IslType("isl_multi_val".to_owned()),
                        "src/bindings/multi_val.rs",
                        &["isl/include/isl/val.h"]);
-    implement_bindings(&RustType::Raw("Point".to_owned()),
+    implement_bindings(&RustType::IslType("Point"),
                        &CType::IslType("isl_point".to_owned()),
                        "src/bindings/point.rs",
                        &["isl/include/isl/point.h"]);
-    implement_bindings(&RustType::Raw("Mat".to_owned()),
+    implement_bindings(&RustType::IslType("Mat"),
                        &CType::IslType("isl_mat".to_owned()),
                        "src/bindings/mat.rs",
                        &["isl/include/isl/mat.h"]);
-    implement_bindings(&RustType::Raw("Vec".to_owned()),
+    implement_bindings(&RustType::IslType("Vec"),
                        &CType::IslType("isl_vec".to_owned()),
                        "src/bindings/vec.rs",
                        &["isl/include/isl/vec.h"]);
-    implement_bindings(&RustType::Raw("BasicSet".to_owned()),
+    implement_bindings(&RustType::IslType("BasicSet"),
                        &CType::IslType("isl_basic_set".to_owned()),
                        "src/bindings/bset.rs",
                        &["isl/include/isl/set.h", "isl/include/isl/constraint.h"]);
-    implement_bindings(&RustType::Raw("BasicSetList".to_owned()),
+    implement_bindings(&RustType::IslType("BasicSetList"),
                        &CType::IslType("isl_basic_set_list".to_owned()),
                        "src/bindings/bset_list.rs",
                        &["isl/include/isl/map_type.h", "isl/include/isl/set.h"]);
-    implement_bindings(&RustType::Raw("Set".to_owned()),
+    implement_bindings(&RustType::IslType("Set"),
                        &CType::IslType("isl_set".to_owned()),
                        "src/bindings/set.rs",
                        &["isl/include/isl/set.h", "isl/include/isl/constraint.h"]);
-    implement_bindings(&RustType::Raw("SetList".to_owned()),
+    implement_bindings(&RustType::IslType("SetList"),
                        &CType::IslType("isl_set_list".to_owned()),
                        "src/bindings/set_list.rs",
                        &["isl/include/isl/map_type.h", "isl/include/isl/set.h"]);
-    implement_bindings(&RustType::Raw("BasicMap".to_owned()),
+    implement_bindings(&RustType::IslType("BasicMap"),
                        &CType::IslType("isl_basic_map".to_owned()),
                        "src/bindings/bmap.rs",
                        &["isl/include/isl/map.h", "isl/include/isl/constraint.h"]);
-    implement_bindings(&RustType::Raw("BasicMapList".to_owned()),
+    implement_bindings(&RustType::IslType("BasicMapList"),
                        &CType::IslType("isl_basic_map_list".to_owned()),
                        "src/bindings/bmap_list.rs",
                        &["isl/include/isl/map_type.h", "isl/include/isl/map.h"]);
-    implement_bindings(&RustType::Raw("Map".to_owned()),
+    implement_bindings(&RustType::IslType("Map"),
                        &CType::IslType("isl_map".to_owned()),
                        "src/bindings/map.rs",
                        &["isl/include/isl/map.h", "isl/include/isl/constraint.h"]);
-    implement_bindings(&RustType::Raw("MapList".to_owned()),
+    implement_bindings(&RustType::IslType("MapList"),
                        &CType::IslType("isl_map_list".to_owned()),
                        "src/bindings/map_list.rs",
                        &["isl/include/isl/map_type.h", "isl/include/isl/map.h"]);
-    implement_bindings(&RustType::Raw("UnionSet".to_owned()),
+    implement_bindings(&RustType::IslType("UnionSet"),
                        &CType::IslType("isl_union_set".to_owned()),
                        "src/bindings/union_set.rs",
                        &["isl/include/isl/union_set_type.h",
                          "isl/include/isl/union_set.h"]);
-    implement_bindings(&RustType::Raw("UnionSetList".to_owned()),
+    implement_bindings(&RustType::IslType("UnionSetList"),
                        &CType::IslType("isl_union_set_list".to_owned()),
                        "src/bindings/union_set_list.rs",
                        &["isl/include/isl/union_set_type.h",
                          "isl/include/isl/union_set.h"]);
-    implement_bindings(&RustType::Raw("UnionMap".to_owned()),
+    implement_bindings(&RustType::IslType("UnionMap"),
                        &CType::IslType("isl_union_map".to_owned()),
                        "src/bindings/union_map.rs",
                        &["isl/include/isl/union_map_type.h",
                          "isl/include/isl/union_map.h"]);
-    implement_bindings(&RustType::Raw("UnionMapList".to_owned()),
+    implement_bindings(&RustType::IslType("UnionMapList"),
                        &CType::IslType("isl_union_map_list".to_owned()),
                        "src/bindings/union_map_list.rs",
                        &["isl/include/isl/union_map_type.h",
                          "isl/include/isl/union_map.h"]);
-    implement_bindings(&RustType::Raw("Constraint".to_owned()),
+    implement_bindings(&RustType::IslType("Constraint"),
                        &CType::IslType("isl_constraint".to_owned()),
                        "src/bindings/constraint.rs",
                        &["isl/include/isl/constraint.h"]);
-    implement_bindings(&RustType::Raw("ConstraintList".to_owned()),
+    implement_bindings(&RustType::IslType("ConstraintList"),
                        &CType::IslType("isl_constraint_list".to_owned()),
                        "src/bindings/constraint_list.rs",
                        &["isl/include/isl/constraint.h"]);
-    implement_bindings(&RustType::Raw("Aff".to_owned()),
+    implement_bindings(&RustType::IslType("Aff"),
                        &CType::IslType("isl_aff".to_owned()),
                        "src/bindings/aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("AffList".to_owned()),
+    implement_bindings(&RustType::IslType("AffList"),
                        &CType::IslType("isl_aff_list".to_owned()),
                        "src/bindings/aff_list.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("Term".to_owned()),
+    implement_bindings(&RustType::IslType("Term"),
                        &CType::IslType("isl_term".to_owned()),
                        "src/bindings/term.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("QPolynomial".to_owned()),
+    implement_bindings(&RustType::IslType("QPolynomial"),
                        &CType::IslType("isl_qpolynomial".to_owned()),
                        "src/bindings/qpolynomial.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("QPolynomialList".to_owned()),
+    implement_bindings(&RustType::IslType("QPolynomialList"),
                        &CType::IslType("isl_qpolynomial_list".to_owned()),
                        "src/bindings/qpolynomial_list.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("QPolynomialFold".to_owned()),
+    implement_bindings(&RustType::IslType("QPolynomialFold"),
                        &CType::IslType("isl_qpolynomial_fold".to_owned()),
                        "src/bindings/qpolynomial_fold.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("MultiAff".to_owned()),
+    implement_bindings(&RustType::IslType("MultiAff"),
                        &CType::IslType("isl_multi_aff".to_owned()),
                        "src/bindings/multi_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("MultiPwAff".to_owned()),
+    implement_bindings(&RustType::IslType("MultiPwAff"),
                        &CType::IslType("isl_multi_pw_aff".to_owned()),
                        "src/bindings/multi_pw_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("MultiUnionPwAff".to_owned()),
+    implement_bindings(&RustType::IslType("MultiUnionPwAff"),
                        &CType::IslType("isl_multi_union_pw_aff".to_owned()),
                        "src/bindings/multi_union_pw_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("PwAff".to_owned()),
+    implement_bindings(&RustType::IslType("PwAff"),
                        &CType::IslType("isl_pw_aff".to_owned()),
                        "src/bindings/pw_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("PwAffList".to_owned()),
+    implement_bindings(&RustType::IslType("PwAffList"),
                        &CType::IslType("isl_pw_aff_list".to_owned()),
                        "src/bindings/pw_aff_list.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("PwMultiAff".to_owned()),
+    implement_bindings(&RustType::IslType("PwMultiAff"),
                        &CType::IslType("isl_pw_multi_aff".to_owned()),
                        "src/bindings/pw_multi_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("PwMultiAffList".to_owned()),
+    implement_bindings(&RustType::IslType("PwMultiAffList"),
                        &CType::IslType("isl_pw_multi_aff_list".to_owned()),
                        "src/bindings/pw_multi_aff_list.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("PwQPolynomial".to_owned()),
+    implement_bindings(&RustType::IslType("PwQPolynomial"),
                        &CType::IslType("isl_pw_qpolynomial".to_owned()),
                        "src/bindings/pw_qpolynomial.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("PwQPolynomialList".to_owned()),
+    implement_bindings(&RustType::IslType("PwQPolynomialList"),
                        &CType::IslType("isl_pw_qpolynomial_list".to_owned()),
                        "src/bindings/pw_qpolynomial_list.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("PwQPolynomialFold".to_owned()),
+    implement_bindings(&RustType::IslType("PwQPolynomialFold"),
                        &CType::IslType("isl_pw_qpolynomial_fold".to_owned()),
                        "src/bindings/pw_qpolynomial_fold.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("PwQPolynomialFoldList".to_owned()),
+    implement_bindings(&RustType::IslType("PwQPolynomialFoldList"),
                        &CType::IslType("isl_pw_qpolynomial_fold_list".to_owned()),
                        "src/bindings/pw_qpolynomial_fold_list.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("UnionPwAff".to_owned()),
+    implement_bindings(&RustType::IslType("UnionPwAff"),
                        &CType::IslType("isl_union_pw_aff".to_owned()),
                        "src/bindings/union_pw_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("UnionPwAffList".to_owned()),
+    implement_bindings(&RustType::IslType("UnionPwAffList"),
                        &CType::IslType("isl_union_pw_aff_list".to_owned()),
                        "src/bindings/union_pw_aff_list.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("UnionPwMultiAff".to_owned()),
+    implement_bindings(&RustType::IslType("UnionPwMultiAff"),
                        &CType::IslType("isl_union_pw_multi_aff".to_owned()),
                        "src/bindings/union_pw_multi_aff.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("UnionPwMultiAffList".to_owned()),
+    implement_bindings(&RustType::IslType("UnionPwMultiAffList"),
                        &CType::IslType("isl_union_pw_multi_aff_list".to_owned()),
                        "src/bindings/union_pw_multi_aff_list.rs",
                        &["isl/include/isl/aff.h"]);
-    implement_bindings(&RustType::Raw("UnionPwQPolynomial".to_owned()),
+    implement_bindings(&RustType::IslType("UnionPwQPolynomial"),
                        &CType::IslType("isl_union_pw_qpolynomial".to_owned()),
                        "src/bindings/union_pw_qpolynomial.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("UnionPwQPolynomialFold".to_owned()),
+    implement_bindings(&RustType::IslType("UnionPwQPolynomialFold"),
                        &CType::IslType("isl_union_pw_qpolynomial_fold".to_owned()),
                        "src/bindings/union_pw_qpolynomial_fold.rs",
                        &["isl/include/isl/polynomial.h"]);
-    implement_bindings(&RustType::Raw("StrideInfo".to_owned()),
+    implement_bindings(&RustType::IslType("StrideInfo"),
                        &CType::IslType("isl_stride_info".to_owned()),
                        "src/bindings/stride_info.rs",
                        &["isl/include/isl/stride_info.h"]);
-    implement_bindings(&RustType::Raw("FixedBox".to_owned()),
+    implement_bindings(&RustType::IslType("FixedBox"),
                        &CType::IslType("isl_fixed_box".to_owned()),
                        "src/bindings/fixed_box.rs",
                        &["isl/include/isl/fixed_box.h"]);
-    implement_bindings(&RustType::Raw("Printer".to_owned()),
+    implement_bindings(&RustType::IslType("Printer"),
                        &CType::IslType("isl_printer".to_owned()),
                        "src/bindings/printer.rs",
                        &["isl/include/isl/printer.h",
